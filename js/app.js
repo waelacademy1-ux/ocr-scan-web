@@ -6,7 +6,7 @@
  */
 (function () {
   "use strict";
-  var VERSION = "V3";
+  var VERSION = "V3.1";
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
@@ -657,24 +657,39 @@
   function normName(s) { return String(s).trim().toUpperCase(); }
   function baseName(name) { const i = name.lastIndexOf("."); return i > 0 ? name.slice(0, i) : name; }
 
+  // Recursively index files under the connected folder, so you can authorise a
+  // parent (e.g. D:\ or D:\wael) and it still finds HG1.pdf deep inside a subfolder.
   async function refreshFileMap() {
     for (const k in fileMap) delete fileMap[k];
     if (!printDir) return 0;
+    const MAX_FILES = 20000, MAX_DEPTH = 10;
     let n = 0;
-    try {
-      for await (const entry of printDir.values()) {
-        if (entry.kind !== "file") continue;
-        fileMap[normName(entry.name)] = entry;          // full name, e.g. HG1.PDF
-        fileMap[normName(baseName(entry.name))] = entry; // base, e.g. HG1
-        n++;
-      }
-    } catch (_) {}
+    async function walk(dir, depth) {
+      if (depth > MAX_DEPTH || n >= MAX_FILES) return;
+      let entries;
+      try { entries = dir.values(); } catch (_) { return; }
+      try {
+        for await (const entry of entries) {
+          if (n >= MAX_FILES) return;
+          if (entry.kind === "file") {
+            const full = normName(entry.name), base = normName(baseName(entry.name));
+            if (!fileMap[full]) fileMap[full] = entry;   // first match wins
+            if (!fileMap[base]) fileMap[base] = entry;   // so HG1 -> HG1.pdf
+            n++;
+          } else if (entry.kind === "directory") {
+            await walk(entry, depth + 1);
+          }
+        }
+      } catch (_) {}
+    }
+    await walk(printDir, 0);
     return n;
   }
   async function useDir(handle, remember) {
     printDir = handle;
+    setFolderStatus("scanning", "Scanning " + (handle.name || "folder") + " (incl. subfolders)…");
     const n = await refreshFileMap();
-    setFolderStatus("ok", (handle.name || "Folder") + " · " + n + " file" + (n === 1 ? "" : "s") + " ready");
+    setFolderStatus("ok", (handle.name || "Folder") + " · " + n + " file" + (n === 1 ? "" : "s") + " found");
     if (remember) { try { await idb("set", handle); } catch (_) {} }
   }
   async function connectFolder() {
@@ -694,7 +709,8 @@
   }
   function parseCodes(text) {
     const seen = {};
-    return String(text || "").split(/[\s,;]+/).map(normName).filter((c) => c && !seen[c] && (seen[c] = 1));
+    // split on spaces, commas, semicolons AND dashes -> "HG1-CN7" = HG1 + CN7
+    return String(text || "").split(/[\s,;\-]+/).map(normName).filter((c) => c && !seen[c] && (seen[c] = 1));
   }
   function setPrintMsg(text, kind) {
     const m = $("printMsg"); if (!m) return;
@@ -736,7 +752,7 @@
   if ($("connectFolderBtn")) $("connectFolderBtn").addEventListener("click", connectFolder);
   if ($("openFilesBtn")) $("openFilesBtn").addEventListener("click", openFiles);
   if ($("clearCodesInputBtn")) $("clearCodesInputBtn").addEventListener("click", () => { if (codesInput) codesInput.value = ""; setPrintMsg("", ""); });
-  if ($("refreshFolderBtn")) $("refreshFolderBtn").addEventListener("click", async () => { if (printDir) { const n = await refreshFileMap(); setFolderStatus("ok", (printDir.name || "Folder") + " · " + n + " file" + (n === 1 ? "" : "s") + " ready"); } });
+  if ($("refreshFolderBtn")) $("refreshFolderBtn").addEventListener("click", async () => { if (printDir) await useDir(printDir, false); });
 
   /* ================= copy ================= */
   async function copyText(text, btn) {
