@@ -6,7 +6,7 @@
  */
 (function () {
   "use strict";
-  var VERSION = "V2.1";
+  var VERSION = "V3";
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
@@ -409,6 +409,7 @@
       addLiveItem(id, isDataImage(msg.thumb) ? msg.thumb : null);
       const text = msg.text.slice(0, 20000).trim();
       updateLiveItem(id, text || "(no code detected)", !text);
+      if (text) appendCodeToInput(text); // add scanned code to the "open files" box
       setPairStatus("linked", "Phone linked — scan away");
     }
   }
@@ -629,6 +630,114 @@
     finally { try { URL.revokeObjectURL(url); } catch (_) {} deskBusy = false; pickBtn.disabled = false; }
   }
 
+  /* ================= DESKTOP: open print files by code (File System Access) ================= */
+  let printDir = null;   // FileSystemDirectoryHandle for e.g. D:\wael\Wael print
+  const fileMap = {};    // NORMALIZED name/basename -> FileSystemFileHandle (the "database")
+  const fsaSupported = (typeof window.showDirectoryPicker === "function");
+  const codesInput = $("codesInput");
+
+  // remember the chosen folder between visits (IndexedDB can store the handle)
+  function idb(op, val) {
+    return new Promise((resolve) => {
+      let req;
+      try { req = indexedDB.open("waelprint", 1); } catch (_) { return resolve(null); }
+      req.onupgradeneeded = () => { try { req.result.createObjectStore("kv"); } catch (_) {} };
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => {
+        const db = req.result;
+        let tx; try { tx = db.transaction("kv", op === "set" ? "readwrite" : "readonly"); } catch (_) { return resolve(null); }
+        const store = tx.objectStore("kv");
+        const r = op === "set" ? store.put(val, "printDir") : store.get("printDir");
+        r.onsuccess = () => resolve(op === "set" ? true : (r.result || null));
+        r.onerror = () => resolve(null);
+      };
+    });
+  }
+  function setFolderStatus(state, text) { const el = $("folderStatus"); if (el) { el.textContent = text; el.setAttribute("data-state", state); } }
+  function normName(s) { return String(s).trim().toUpperCase(); }
+  function baseName(name) { const i = name.lastIndexOf("."); return i > 0 ? name.slice(0, i) : name; }
+
+  async function refreshFileMap() {
+    for (const k in fileMap) delete fileMap[k];
+    if (!printDir) return 0;
+    let n = 0;
+    try {
+      for await (const entry of printDir.values()) {
+        if (entry.kind !== "file") continue;
+        fileMap[normName(entry.name)] = entry;          // full name, e.g. HG1.PDF
+        fileMap[normName(baseName(entry.name))] = entry; // base, e.g. HG1
+        n++;
+      }
+    } catch (_) {}
+    return n;
+  }
+  async function useDir(handle, remember) {
+    printDir = handle;
+    const n = await refreshFileMap();
+    setFolderStatus("ok", (handle.name || "Folder") + " · " + n + " file" + (n === 1 ? "" : "s") + " ready");
+    if (remember) { try { await idb("set", handle); } catch (_) {} }
+  }
+  async function connectFolder() {
+    if (!fsaSupported) { setFolderStatus("err", "Open this page in Microsoft Edge or Chrome to use local files."); return; }
+    try {
+      const saved = await idb("get");
+      if (saved && saved.requestPermission) {
+        const perm = await saved.requestPermission({ mode: "read" });
+        if (perm === "granted") { await useDir(saved, false); return; }
+      }
+      const handle = await window.showDirectoryPicker({ id: "waelprint", mode: "read" });
+      await useDir(handle, true);
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+      setFolderStatus("err", "Couldn't open the folder.");
+    }
+  }
+  function parseCodes(text) {
+    const seen = {};
+    return String(text || "").split(/[\s,;]+/).map(normName).filter((c) => c && !seen[c] && (seen[c] = 1));
+  }
+  function setPrintMsg(text, kind) {
+    const m = $("printMsg"); if (!m) return;
+    if (!text) { hide(m); return; }
+    m.textContent = text; m.setAttribute("data-kind", kind || ""); show(m);
+  }
+  function appendCodeToInput(code) {
+    if (!codesInput) return;
+    const cur = codesInput.value.trim();
+    codesInput.value = (cur ? cur + " " : "") + normName(code);
+  }
+  async function openFiles() {
+    if (!fsaSupported) { setPrintMsg("Open this page in Edge or Chrome to open local files.", "err"); return; }
+    if (!printDir) { setPrintMsg("Connect the print folder first.", "err"); return; }
+    const codes = parseCodes(codesInput ? codesInput.value : "");
+    if (!codes.length) { setPrintMsg("No codes to open — scan or type some (e.g. HG1 CN7).", "err"); return; }
+    const found = [], notFound = [];
+    codes.forEach((c) => (fileMap[c] ? found : notFound).push(c));
+    // Pre-open one tab per found file INSIDE the click, to avoid pop-up blocking
+    // (the tabs are navigated to the PDFs immediately, or after 3s in the mixed case).
+    const tabs = found.map(() => { try { return window.open("", "_blank"); } catch (_) { return null; } });
+    let msg = "";
+    if (notFound.length) msg = (notFound.length === 1 ? "Code " : "Codes ") + notFound.join(", ") + " — out of the database";
+    if (found.length) msg += (msg ? " · " : "") + "opening " + found.join(", ");
+    setPrintMsg(msg, notFound.length ? (found.length ? "warn" : "err") : "ok");
+    const delay = (notFound.length && found.length) ? 3000 : 0; // show the "out" note first, then open
+    setTimeout(async () => {
+      for (let i = 0; i < found.length; i++) {
+        try {
+          const file = await fileMap[found[i]].getFile();
+          const url = URL.createObjectURL(file);
+          if (tabs[i]) tabs[i].location.href = url; else window.open(url, "_blank");
+          setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 120000);
+        } catch (e) { if (tabs[i]) { try { tabs[i].close(); } catch (_) {} } }
+      }
+    }, delay);
+  }
+
+  if ($("connectFolderBtn")) $("connectFolderBtn").addEventListener("click", connectFolder);
+  if ($("openFilesBtn")) $("openFilesBtn").addEventListener("click", openFiles);
+  if ($("clearCodesInputBtn")) $("clearCodesInputBtn").addEventListener("click", () => { if (codesInput) codesInput.value = ""; setPrintMsg("", ""); });
+  if ($("refreshFolderBtn")) $("refreshFolderBtn").addEventListener("click", async () => { if (printDir) { const n = await refreshFileMap(); setFolderStatus("ok", (printDir.name || "Folder") + " · " + n + " file" + (n === 1 ? "" : "s") + " ready"); } });
+
   /* ================= copy ================= */
   async function copyText(text, btn) {
     try { await navigator.clipboard.writeText(text); }
@@ -661,6 +770,18 @@
 
   /* ================= init ================= */
   const verEl = $("version"); if (verEl) verEl.textContent = VERSION;
+  // try to silently restore a previously-connected print folder
+  (async () => {
+    if (!fsaSupported) { setFolderStatus("err", "Open in Edge or Chrome to open local files."); return; }
+    try {
+      const saved = await idb("get");
+      if (saved && saved.queryPermission) {
+        const perm = await saved.queryPermission({ mode: "read" });
+        if (perm === "granted") await useDir(saved, false);
+        else setFolderStatus("idle", "Folder remembered — click Connect to allow access");
+      }
+    } catch (_) {}
+  })();
   const first = parseHash();
   if (first.pair) pendingPairId = first.pair;
   if (first.view !== "landing") applyView(first.view);

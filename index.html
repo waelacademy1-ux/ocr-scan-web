@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#4f46e5" />
   <meta name="description" content="WaelPrint — a focused code scanner. Line a code up in the box and read it instantly in your browser. Send codes live to a paired PC." />
-  <title>WaelPrint (V2.1) — Code scanner</title>
+  <title>WaelPrint (V3) — Print by code</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📷</text></svg>" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -15,7 +15,7 @@
     <button id="backBtn" class="back-btn" hidden aria-label="Go back">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
     </button>
-    <span class="brand"><span class="brand-dot" aria-hidden="true">●</span> WaelPrint <span class="brand-tag">V2.1</span></span>
+    <span class="brand"><span class="brand-dot" aria-hidden="true">●</span> WaelPrint <span class="brand-tag">V3</span></span>
   </header>
 
   <!-- Screen-reader live region for OCR progress/results -->
@@ -40,7 +40,7 @@
         <button class="choice-card" data-go="desktop">
           <span class="choice-icon" aria-hidden="true">🖥️</span>
           <span class="choice-title">Desktop</span>
-          <span class="choice-desc">Link your phone &amp; see scans here live</span>
+          <span class="choice-desc">Open print files by scanned code</span>
           <span class="choice-badge" id="badge-desktop" hidden>Recommended for your device</span>
         </button>
       </div>
@@ -106,8 +106,27 @@
     <section id="view-desktop" class="view" aria-label="Link a phone and see live scans">
       <div class="desktop-card">
         <span class="desktop-emoji" aria-hidden="true">📲</span>
-        <h1 tabindex="-1">Scan on your phone, see it here</h1>
-        <p class="sub">Open your phone's camera and point it at the code below to link it. Then every scan on your phone shows up on this screen — instantly.</p>
+        <h1 tabindex="-1">Open print files by code</h1>
+        <p class="sub">Connect your PDF folder once, then scan a code (on your phone) or type it — the matching file opens in a new tab. Two codes → two tabs. Unknown code → it tells you it's out of the database.</p>
+
+        <div class="print-block">
+          <div class="print-row">
+            <button id="connectFolderBtn" class="btn btn-primary">Connect print folder</button>
+            <button id="refreshFolderBtn" class="btn btn-ghost" title="Re-scan the folder" aria-label="Re-scan the folder">↻</button>
+            <span id="folderStatus" class="folder-status" data-state="idle">Not connected</span>
+          </div>
+          <label class="print-field">
+            <span>Codes to open <small>— space or comma separated; phone scans land here too</small></span>
+            <textarea id="codesInput" spellcheck="false" placeholder="e.g.  HG1  CN7"></textarea>
+          </label>
+          <div class="print-actions">
+            <button id="openFilesBtn" class="btn btn-primary btn-lg">Open files</button>
+            <button id="clearCodesInputBtn" class="btn btn-ghost">Clear</button>
+          </div>
+          <p id="printMsg" class="print-msg" hidden></p>
+        </div>
+
+        <div class="divider"><span>link your phone to scan codes into the box</span></div>
 
         <div class="pair-status" id="pairStatus" data-state="starting">
           <span class="dot" aria-hidden="true"></span>
@@ -178,8 +197,8 @@
   </main>
 
   <footer class="footer">
-    <span>Codes are read by an online AI engine (OCR.space) for accuracy, with an on-device fallback. The phone→PC link relays only the code text.</span>
-    <span class="ver">WaelPrint <span id="version">V2.1</span> · AI reader · updated 18 Jul 2026</span>
+    <span>Codes read by an online AI engine (OCR.space) with an on-device fallback. Your PDFs stay on your PC — opened straight from your folder via the browser (Edge / Chrome).</span>
+    <span class="ver">WaelPrint <span id="version">V3</span> · updated 18 Jul 2026</span>
   </footer>
 
   <!-- Libraries (loaded from CDN, integrity-checked) -->
