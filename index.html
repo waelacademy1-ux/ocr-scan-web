@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#4f46e5" />
-  <meta name="description" content="Scan text with your phone camera (OCR) right in the browser. No app to install." />
+  <meta name="description" content="Scan text with your phone camera (OCR) right in the browser. Live phone-to-PC mode. No app to install." />
   <title>ScanText — Camera OCR in your browser</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📷</text></svg>" />
   <link rel="stylesheet" href="css/style.css" />
@@ -26,7 +26,7 @@
     <section id="view-landing" class="view active" aria-label="Choose how you're using ScanText">
       <div class="hero">
         <h1 tabindex="-1">Scan text with your camera</h1>
-        <p class="sub">Point, capture, and get the text out of any document, sign, or note — right in your browser. Nothing to install.</p>
+        <p class="sub">Point, capture, and pull the text out of any document, sign, or note — right in your browser. Nothing to install.</p>
       </div>
 
       <p class="choose-label">How are you using ScanText?</p>
@@ -40,7 +40,7 @@
         <button class="choice-card" data-go="desktop">
           <span class="choice-icon" aria-hidden="true">🖥️</span>
           <span class="choice-title">Desktop</span>
-          <span class="choice-desc">See how to scan (or upload an image)</span>
+          <span class="choice-desc">Link your phone &amp; see scans here live</span>
           <span class="choice-badge" id="badge-desktop" hidden>Recommended for your device</span>
         </button>
       </div>
@@ -48,6 +48,11 @@
 
     <!-- ============ VIEW 2: MOBILE (camera + OCR) ============ -->
     <section id="view-mobile" class="view" aria-label="Scan with camera">
+      <div id="mobilePair" class="pair-banner" hidden>
+        <span class="dot" aria-hidden="true"></span>
+        <span id="mobilePairText">Connecting to your PC…</span>
+      </div>
+
       <div class="toolbar">
         <label class="field">
           <span>Language</span>
@@ -68,10 +73,12 @@
         <div id="camMsg" class="cam-msg" hidden></div>
       </div>
 
+      <p class="tip">Tip: fill the frame with the text, hold steady, and keep good lighting for the best results.</p>
+
       <div class="actions">
         <button id="captureBtn" class="btn btn-primary btn-lg">
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path fill="currentColor" d="M9 2 7.17 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3.17L15 2H9zm3 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/></svg>
-          Capture &amp; scan
+          <span id="captureLabel">Capture &amp; scan</span>
         </button>
       </div>
 
@@ -96,23 +103,41 @@
       </div>
     </section>
 
-    <!-- ============ VIEW 3: DESKTOP (how to scan) ============ -->
-    <section id="view-desktop" class="view" aria-label="How to scan from desktop">
+    <!-- ============ VIEW 3: DESKTOP (link phone + live results) ============ -->
+    <section id="view-desktop" class="view" aria-label="Link a phone and see live scans">
       <div class="desktop-card">
         <span class="desktop-emoji" aria-hidden="true">📲</span>
-        <h1 tabindex="-1">To scan, use your phone</h1>
-        <p class="sub">Scanning needs a camera. Open this same page on your phone and choose <strong>Mobile</strong> — then point at any text.</p>
+        <h1 tabindex="-1">Scan on your phone, see it here</h1>
+        <p class="sub">Open your phone's camera and point it at the code below to link it. Then every scan on your phone shows up on this screen — instantly.</p>
+
+        <div class="pair-status" id="pairStatus" data-state="starting">
+          <span class="dot" aria-hidden="true"></span>
+          <span id="pairStatusText">Starting secure link…</span>
+        </div>
 
         <div class="qr-block">
-          <div id="qrcode" class="qr" aria-label="QR code linking to this site"></div>
-          <p class="qr-hint" id="qrHint">Scan this QR code with your phone's camera to open ScanText.</p>
+          <div id="qrcode" class="qr" aria-label="Pairing QR code"></div>
+          <p class="qr-hint" id="qrHint">Scan this with your phone's camera to link it. Works best on the same Wi-Fi.</p>
           <div class="url-row">
-            <input id="siteUrl" type="text" readonly aria-label="ScanText site link" aria-describedby="qrHint" />
+            <input id="siteUrl" type="text" readonly aria-label="Pairing link" aria-describedby="qrHint" />
             <button id="copyUrlBtn" class="btn btn-ghost">Copy link</button>
           </div>
         </div>
 
-        <div class="divider"><span>or scan an image here</span></div>
+        <div class="live-block">
+          <div class="result-head">
+            <h2>Live results</h2>
+            <div class="result-actions">
+              <button id="copyAllBtn" class="btn btn-ghost">Copy all</button>
+              <button id="clearLiveBtn" class="btn btn-ghost">Clear</button>
+            </div>
+          </div>
+          <div id="liveList" class="live-list" aria-live="polite">
+            <p class="live-empty" id="liveEmpty">Nothing yet — link your phone above, then scan something.</p>
+          </div>
+        </div>
+
+        <div class="divider"><span>or scan an image on this computer</span></div>
 
         <div id="dropZone" class="drop-zone">
           <input id="fileInput" type="file" accept="image/*" aria-label="Choose an image to scan" hidden />
@@ -154,12 +179,14 @@
   </main>
 
   <footer class="footer">
-    <span>Runs entirely in your browser — images never leave your device.</span>
+    <span>OCR runs in your browser. The phone→PC link relays only text through a public broker.</span>
+    <span class="ver">ScanText <span id="version">v3</span> · updated 18 Jul 2026</span>
   </footer>
 
   <!-- Libraries (loaded from CDN, integrity-checked) -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js" integrity="sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js" integrity="sha384-u4uqeACkFcoKl57rBQJHVGDd1pqhW4w8X3WjTu1ZksPdxoLqdt34jpoNkJisE25W" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
