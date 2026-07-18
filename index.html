@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#4f46e5" />
   <meta name="description" content="WaelPrint — a focused code scanner. Line a code up in the box and read it instantly in your browser. Send codes live to a paired PC." />
-  <title>WaelPrint (V3.1) — Print by code</title>
+  <title>WaelPrint (V3.2) — Print by code</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📷</text></svg>" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -15,7 +15,7 @@
     <button id="backBtn" class="back-btn" hidden aria-label="Go back">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
     </button>
-    <span class="brand"><span class="brand-dot" aria-hidden="true">●</span> WaelPrint <span class="brand-tag">V3.1</span></span>
+    <span class="brand"><span class="brand-dot" aria-hidden="true">●</span> WaelPrint <span class="brand-tag">V3.2</span></span>
   </header>
 
   <!-- Screen-reader live region for OCR progress/results -->
@@ -124,6 +124,7 @@
             <button id="clearCodesInputBtn" class="btn btn-ghost">Clear</button>
           </div>
           <p id="printMsg" class="print-msg" hidden></p>
+          <div id="openFallback" class="open-fallback" hidden></div>
         </div>
 
         <div class="divider"><span>link your phone to scan codes into the box</span></div>
@@ -198,7 +199,7 @@
 
   <footer class="footer">
     <span>Codes read by an online AI engine (OCR.space) with an on-device fallback. Your PDFs stay on your PC — opened straight from your folder via the browser (Edge / Chrome).</span>
-    <span class="ver">WaelPrint <span id="version">V3.1</span> · updated 18 Jul 2026</span>
+    <span class="ver">WaelPrint <span id="version">V3.2</span> · updated 18 Jul 2026</span>
   </footer>
 
   <!-- Libraries (loaded from CDN, integrity-checked) -->

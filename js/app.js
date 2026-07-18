@@ -6,7 +6,7 @@
  */
 (function () {
   "use strict";
-  var VERSION = "V3.1";
+  var VERSION = "V3.2";
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
@@ -722,30 +722,60 @@
     const cur = codesInput.value.trim();
     codesInput.value = (cur ? cur + " " : "") + normName(code);
   }
+  // open each file in its OWN new WINDOW (features -> window, not a tab), positioned
+  function winFeatures(i, n) {
+    const sw = screen.availWidth || 1280, sh = screen.availHeight || 800;
+    if (n === 2) { const w = Math.floor(sw / 2); return "width=" + w + ",height=" + sh + ",left=" + (i * w) + ",top=0"; }
+    const w = Math.floor(sw * 0.62), h = Math.floor(sh * 0.85);
+    return "width=" + w + ",height=" + h + ",left=" + (40 + i * 36) + ",top=" + (40 + i * 36);
+  }
+  function openInWindow(url, code, i, n) {
+    try { return window.open(url, "wp_" + code, winFeatures(i, n)); } catch (_) { return null; }
+  }
+  function showBlockedFallback(blocked, n) {
+    const box = $("openFallback"); if (!box) return;
+    box.innerHTML = "";
+    const note = document.createElement("p");
+    note.className = "fallback-note";
+    note.textContent = "Your browser blocked the extra window(s). Click to open each — or allow pop-ups for this site (address-bar icon → Always allow) so they all open together next time.";
+    box.appendChild(note);
+    blocked.forEach((b) => {
+      const btn = document.createElement("button");
+      btn.className = "btn btn-primary fallback-btn"; btn.type = "button";
+      btn.textContent = "Open " + b.code;
+      btn.addEventListener("click", () => { openInWindow(b.url, b.code, b.i, n); btn.disabled = true; btn.textContent = "Opened " + b.code; });
+      box.appendChild(btn);
+    });
+    show(box);
+  }
   async function openFiles() {
     if (!fsaSupported) { setPrintMsg("Open this page in Edge or Chrome to open local files.", "err"); return; }
     if (!printDir) { setPrintMsg("Connect the print folder first.", "err"); return; }
     const codes = parseCodes(codesInput ? codesInput.value : "");
-    if (!codes.length) { setPrintMsg("No codes to open — scan or type some (e.g. HG1 CN7).", "err"); return; }
+    if (!codes.length) { setPrintMsg("No codes to open — scan or type some (e.g. HG1-CN7).", "err"); return; }
     const found = [], notFound = [];
     codes.forEach((c) => (fileMap[c] ? found : notFound).push(c));
-    // Pre-open one tab per found file INSIDE the click, to avoid pop-up blocking
-    // (the tabs are navigated to the PDFs immediately, or after 3s in the mixed case).
-    const tabs = found.map(() => { try { return window.open("", "_blank"); } catch (_) { return null; } });
+    const fb = $("openFallback"); if (fb) { fb.innerHTML = ""; hide(fb); }
+    // Pre-open one WINDOW per found file INSIDE the click (dodges the pop-up blocker);
+    // navigated to the PDFs immediately, or after 3s in the mixed case.
+    const wins = found.map((c, i) => openInWindow("", c, i, found.length));
     let msg = "";
     if (notFound.length) msg = (notFound.length === 1 ? "Code " : "Codes ") + notFound.join(", ") + " — out of the database";
-    if (found.length) msg += (msg ? " · " : "") + "opening " + found.join(", ");
+    if (found.length) msg += (msg ? " · " : "") + "opening " + found.join(", ") + " in " + (found.length === 1 ? "a new window" : found.length + " windows");
     setPrintMsg(msg, notFound.length ? (found.length ? "warn" : "err") : "ok");
     const delay = (notFound.length && found.length) ? 3000 : 0; // show the "out" note first, then open
     setTimeout(async () => {
+      const blocked = [];
       for (let i = 0; i < found.length; i++) {
         try {
           const file = await fileMap[found[i]].getFile();
           const url = URL.createObjectURL(file);
-          if (tabs[i]) tabs[i].location.href = url; else window.open(url, "_blank");
-          setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 120000);
-        } catch (e) { if (tabs[i]) { try { tabs[i].close(); } catch (_) {} } }
+          if (wins[i] && !wins[i].closed) { wins[i].location.href = url; }
+          else { blocked.push({ code: found[i], url: url, i: i }); }
+          setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 300000);
+        } catch (e) { if (wins[i]) { try { wins[i].close(); } catch (_) {} } }
       }
+      if (blocked.length) showBlockedFallback(blocked, found.length);
     }, delay);
   }
 
