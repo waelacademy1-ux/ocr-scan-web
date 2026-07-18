@@ -1,10 +1,12 @@
-/* ScanText v3 — in-browser camera OCR with a reliable phone→PC link
- * The phone reads the photo (Tesseract.js) and sends the TEXT to the PC through a
- * public MQTT-over-WebSocket relay (room = the QR pairing code). No fragile P2P.
+/* WaelPrint (V2) — focused in-browser code scanner
+ * A fixed rectangle (ROI) in the camera reads ONLY the code lined up inside it
+ * (single-line OCR, Tesseract.js) — far more accurate & repeatable than whole-frame.
+ * Optional live link: the phone sends each read code to a paired PC via an
+ * MQTT-over-WebSocket relay (room = the QR pairing code).
  */
 (function () {
   "use strict";
-  var VERSION = "v4";
+  var VERSION = "V2";
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
@@ -13,9 +15,7 @@
   const now = () => (Date.now ? Date.now() : new Date().getTime());
   const cssEsc = (s) => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
 
-  // relay: public MQTT-over-WebSocket broker. The URL-string form is REQUIRED —
-  // mqtt.js ignores a per-server "/mqtt" path in the servers-array form (no CONNACK).
-  const BROKER_URL = "wss://broker.emqx.io:8084/mqtt";
+  const BROKER_URL = "wss://broker.emqx.io:8084/mqtt"; // URL-string form required by mqtt.js
   const TOPIC_ROOT = "scantext/v3";
 
   const views = { landing: $("view-landing"), mobile: $("view-mobile"), desktop: $("view-desktop") };
@@ -32,7 +32,6 @@
     else if (name === "mobile") t = backBtn;
     if (t) { try { t.focus({ preventScroll: true }); } catch (_) {} }
   }
-
   function applyView(name) {
     if (!views[name]) name = "landing";
     Object.values(views).forEach((v) => v.classList.remove("active"));
@@ -40,7 +39,6 @@
     currentView = name;
     backBtn.hidden = name === "landing";
     window.scrollTo(0, 0);
-
     if (name === "mobile") {
       startCamera();
       if (pendingPairId) { startClient(pendingPairId); pendingPairId = null; }
@@ -52,8 +50,6 @@
     if (name === "desktop") startHost();
     focusView(name);
   }
-
-  // user-initiated navigation. Going to a standalone context ends any phone link.
   function goTo(name) {
     if (name === "landing" || name === "mobile") {
       pendingPairId = null;
@@ -63,7 +59,6 @@
     if (location.hash !== hash) history.replaceState(null, "", hash || location.pathname + location.search);
     applyView(name);
   }
-
   backBtn.addEventListener("click", () => goTo("landing"));
   document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => goTo(b.getAttribute("data-go"))));
   window.addEventListener("hashchange", () => {
@@ -71,7 +66,6 @@
     if (p.pair) pendingPairId = p.pair;
     applyView(p.view);
   });
-
   function parseHash() {
     const raw = (location.hash || "").replace(/^#/, "");
     if (raw.indexOf("pair=") === 0) return { view: "mobile", pair: decodeURIComponent(raw.slice(5)) };
@@ -134,7 +128,6 @@
     if (maxSide < 1600) scale = Math.min(3, 1600 / maxSide);
     else if (maxSide > 2600) scale = 2600 / maxSide;
     const w = Math.round(sw * scale), h = Math.round(sh * scale);
-
     const c = document.createElement("canvas");
     c.width = w; c.height = h;
     const ctx = c.getContext("2d", { willReadFrequently: true });
@@ -142,15 +135,11 @@
     let img;
     try { img = ctx.getImageData(0, 0, w, h); } catch (e) { return c; }
     const d = img.data;
-
-    // grayscale
     const gray = new Uint8ClampedArray(w * h);
     for (let i = 0, p = 0; i < d.length; i += 4, p++) {
       gray[p] = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
     }
-    // Bradley–Roth adaptive threshold via an integral image. Unlike a global
-    // threshold, it adapts to local lighting, so shadows/glare on a phone photo
-    // don't wipe out the text — the main cause of garbled reads.
+    // Bradley–Roth adaptive threshold (integral image) — robust to uneven lighting.
     const integ = new Uint32Array(w * h);
     for (let y = 0; y < h; y++) {
       let rowsum = 0;
@@ -159,8 +148,8 @@
         integ[y * w + x] = (y > 0 ? integ[(y - 1) * w + x] : 0) + rowsum;
       }
     }
-    const half = Math.max(4, (w >> 4) >> 1); // ~width/16 neighbourhood
-    const T = 0.15;                           // how much darker than local mean = ink
+    const half = Math.max(4, (w >> 4) >> 1);
+    const T = 0.15;
     for (let y = 0; y < h; y++) {
       const y1 = y - half < 0 ? 0 : y - half;
       const y2 = y + half >= h ? h - 1 : y + half;
@@ -199,36 +188,38 @@
     return typeof s === "string" && /^data:image\/(png|jpe?g|webp);base64,/.test(s) && s.length < 400000;
   }
 
-  /* ================= OCR (cached worker per language, serialized) ================= */
+  /* ================= OCR (cached worker per language+mode, serialized) ================= */
   const STATUS_LABELS = {
     "loading tesseract core": "Loading engine…",
     "initializing tesseract": "Starting engine…",
     "loading language traineddata": "Loading language…",
     "initializing api": "Initializing…",
-    "recognizing text": "Reading text…",
+    "recognizing text": "Reading…",
   };
   const workerCache = {};
   let activeProgress = null;
   let ocrChain = Promise.resolve();
 
-  function getWorker(lang) {
-    if (!workerCache[lang]) {
-      workerCache[lang] = (async () => {
+  function getWorker(lang, psm) {
+    const key = lang + "@" + psm;
+    if (!workerCache[key]) {
+      workerCache[key] = (async () => {
         const w = await Tesseract.createWorker(lang, 1, { logger: (m) => { if (activeProgress) activeProgress(m); } });
-        try { await w.setParameters({ tessedit_pageseg_mode: "3", preserve_interword_spaces: "1", user_defined_dpi: "300" }); } catch (_) {}
+        try { await w.setParameters({ tessedit_pageseg_mode: psm, preserve_interword_spaces: "1", user_defined_dpi: "300" }); } catch (_) {}
         return w;
       })();
     }
-    return workerCache[lang];
+    return workerCache[key];
   }
 
-  // Serialized so a shared worker + the single activeProgress global never cross-talk.
-  function ocr(image, lang, progressCb) {
+  // psm "7" = single text line (code scanner), "3" = auto page (whole-image upload).
+  function ocr(image, lang, progressCb, psm) {
+    psm = psm || "3";
     const run = async () => {
       if (typeof Tesseract === "undefined") throw new Error("OCR engine not loaded");
       activeProgress = progressCb || null;
       try {
-        const w = await getWorker(lang);
+        const w = await getWorker(lang, psm);
         const { data } = await w.recognize(image);
         return (data && data.text ? data.text : "").replace(/\n{3,}/g, "\n\n").trim();
       } finally { activeProgress = null; }
@@ -251,7 +242,7 @@
     };
   }
 
-  // OCR into a panel UI. Returns the recognized text.
+  // Whole-image OCR into a panel UI (desktop upload). Returns recognized text.
   async function runOCRPanel(imageSource, lang, els) {
     if (typeof Tesseract === "undefined") { alert("OCR engine failed to load. Check your internet connection and refresh."); return ""; }
     show(els.panel); show(els.progressWrap); hide(els.resultWrap);
@@ -260,7 +251,7 @@
     if (liveStatus) liveStatus.textContent = "Preparing…";
     els.panel.scrollIntoView({ behavior: "smooth", block: "start" });
     try {
-      const text = await ocr(preprocess(imageSource), lang, makeProgress(els.bar, els.label));
+      const text = await ocr(preprocess(imageSource), lang, makeProgress(els.bar, els.label), "3");
       els.textarea.value = text;
       hide(els.progressWrap); show(els.resultWrap);
       if (liveStatus) liveStatus.textContent = text ? "Done. Text extracted." : "No text detected.";
@@ -287,7 +278,7 @@
   }
   function mqttOpts(me) {
     return {
-      clientId: "scantext_" + me + "_" + genRoom(),
+      clientId: "waelprint_" + me + "_" + genRoom(),
       clean: true, connectTimeout: 8000, reconnectPeriod: 3000, keepalive: 30,
       will: { topic: link.base + "/presence/" + me, payload: "0", qos: 0, retain: true },
     };
@@ -299,11 +290,10 @@
           const me = link.role === "host" ? "pc" : "phone";
           try { link.client.publish(link.base + "/presence/" + me, "0", { retain: true, qos: 0 }); } catch (_) {}
         }
-        link.client.end(false); // graceful: flush the retained "offline" publish before closing
+        link.client.end(false);
       }
     } catch (_) {}
     link.client = null; link.role = null; link.peerPresent = false;
-    // link.room is kept so re-entering desktop reuses the same QR
   }
 
   /* ---- desktop (PC) = host / subscriber ---- */
@@ -319,7 +309,7 @@
     link.room = link.room || genRoom();
     link.base = TOPIC_ROOT + "/" + link.room;
     setPairStatus("starting", "Starting secure link…");
-    showPairQR(); // ready instantly — the room is known before the broker connects
+    showPairQR();
     let c;
     try { c = mqtt.connect(BROKER_URL, mqttOpts("pc")); } catch (e) { setPairStatus("error", "Couldn't start the link. Upload an image below instead."); return; }
     link.client = c;
@@ -347,7 +337,7 @@
       const id = (typeof msg.ts === "number" ? msg.ts : now());
       addLiveItem(id, isDataImage(msg.thumb) ? msg.thumb : null);
       const text = msg.text.slice(0, 20000).trim();
-      updateLiveItem(id, text || "(no text detected)", !text);
+      updateLiveItem(id, text || "(no code detected)", !text);
       setPairStatus("linked", "Phone linked — scan away");
     }
   }
@@ -355,8 +345,7 @@
   /* ---- desktop live list ---- */
   const liveList = $("liveList");
   const liveEmpty = $("liveEmpty");
-  const LIVE_MAX = 40;
-
+  const LIVE_MAX = 60;
   function addLiveItem(id, imageUrl) {
     if (liveEmpty) hide(liveEmpty);
     const item = document.createElement("div");
@@ -364,13 +353,13 @@
     item.setAttribute("data-ts", String(id));
     if (isDataImage(imageUrl)) {
       const img = document.createElement("img");
-      img.className = "live-thumb"; img.alt = "scanned frame"; img.src = imageUrl; // src property: never parsed as HTML
+      img.className = "live-thumb"; img.alt = "scanned code"; img.src = imageUrl;
       item.appendChild(img);
     }
     const body = document.createElement("div"); body.className = "live-body";
     const txt = document.createElement("div"); txt.className = "live-text"; txt.textContent = "Reading…";
     body.appendChild(txt); item.appendChild(body);
-    const copy = document.createElement("button"); copy.className = "btn btn-ghost live-copy"; copy.hidden = true; copy.textContent = "Copy";
+    const copy = document.createElement("button"); copy.className = "btn btn-ghost live-copy"; copy.type = "button"; copy.hidden = true; copy.textContent = "Copy";
     item.appendChild(copy);
     liveList.insertBefore(item, liveList.firstChild);
     let items = liveList.querySelectorAll(".live-item");
@@ -383,7 +372,7 @@
     if (isPlaceholder) item.setAttribute("data-placeholder", "true"); else item.removeAttribute("data-placeholder");
     const copy = item.querySelector(".live-copy");
     if (text && !isPlaceholder) { copy.hidden = false; copy.onclick = () => copyText(text, copy); }
-    if (liveStatus) liveStatus.textContent = "New scan received on this computer.";
+    if (liveStatus) liveStatus.textContent = "New code received on this computer.";
   }
   $("clearLiveBtn").addEventListener("click", () => {
     liveList.querySelectorAll(".live-item").forEach((n) => n.remove());
@@ -396,7 +385,7 @@
       const t = (item.querySelector(".live-text").textContent || "").trim();
       if (t && t !== "Reading…") texts.push(t);
     });
-    copyText(texts.join("\n\n---\n\n"), e.currentTarget);
+    copyText(texts.join("\n"), e.currentTarget);
   });
 
   /* ---- mobile (phone) = client / publisher ---- */
@@ -417,13 +406,13 @@
     c.on("connect", () => {
       c.subscribe(link.base + "/presence/pc", { qos: 0 }, () => {});
       c.publish(link.base + "/presence/phone", "1", { retain: true, qos: 0 });
-      setMobilePair(link.peerPresent ? "linked" : "waiting", link.peerPresent ? "Linked to your PC — scans appear there" : "Linked — waiting for your PC…");
+      setMobilePair(link.peerPresent ? "linked" : "waiting", link.peerPresent ? "Linked to your PC — codes appear there" : "Linked — waiting for your PC…");
       updateCaptureLabel();
     });
     c.on("message", (topic, payload) => {
       if (topic === link.base + "/presence/pc") {
         link.peerPresent = (payload.toString() === "1");
-        setMobilePair(link.peerPresent ? "linked" : "waiting", link.peerPresent ? "Linked to your PC — scans appear there" : "Waiting for your PC…");
+        setMobilePair(link.peerPresent ? "linked" : "waiting", link.peerPresent ? "Linked to your PC — codes appear there" : "Waiting for your PC…");
       }
     });
     c.on("reconnect", () => setMobilePair("starting", "Reconnecting…"));
@@ -439,38 +428,111 @@
   function isClient() { return link.role === "client" && link.client; }
   function updateCaptureLabel() {
     const lbl = $("captureLabel");
-    if (lbl) lbl.textContent = isClient() ? "Scan & send to PC" : "Capture & scan";
+    if (lbl) lbl.textContent = isClient() ? "Scan code → PC" : "Scan code";
   }
 
-  /* ================= MOBILE capture ================= */
-  const canvas = $("canvas");
+  /* ================= MOBILE: focused ROI code scanner ================= */
   const captureBtn = $("captureBtn");
-  const mobileEls = { panel: $("ocrPanel"), progressWrap: $("progressWrap"), bar: $("progressBar"), label: $("progressLabel"), resultWrap: $("resultWrap"), textarea: $("resultText") };
+  const codesList = $("codesList");
+  const codesEmpty = $("codesEmpty");
+
+  function setScanMsg(text, kind) {
+    const m = $("scanMsg");
+    if (!m) return;
+    if (!text) { hide(m); return; }
+    m.textContent = text; m.setAttribute("data-kind", kind || ""); show(m);
+  }
+  function updateCodeCount() {
+    const el = $("codeCount");
+    if (el) el.textContent = String(codesList.querySelectorAll(".code-item").length);
+  }
+  function addCode(text) {
+    if (codesEmpty) hide(codesEmpty);
+    const item = document.createElement("div");
+    item.className = "code-item";
+    const inp = document.createElement("input");
+    inp.className = "code-input"; inp.type = "text"; inp.value = text; inp.spellcheck = false;
+    inp.setAttribute("aria-label", "Scanned code (editable)");
+    const copy = document.createElement("button");
+    copy.className = "btn btn-ghost code-copy"; copy.type = "button"; copy.textContent = "Copy";
+    copy.addEventListener("click", () => copyText(inp.value, copy));
+    const del = document.createElement("button");
+    del.className = "btn btn-ghost code-del"; del.type = "button"; del.textContent = "✕"; del.setAttribute("aria-label", "Remove code");
+    del.addEventListener("click", () => { item.remove(); updateCodeCount(); if (!codesList.querySelector(".code-item") && codesEmpty) show(codesEmpty); });
+    item.appendChild(inp); item.appendChild(copy); item.appendChild(del);
+    codesList.insertBefore(item, codesList.firstChild);
+    updateCodeCount();
+    try { if (navigator.vibrate) navigator.vibrate(55); } catch (_) {}
+  }
+  function cleanCode(text) {
+    return (text || "").replace(/\r/g, "").replace(/\n+/g, " ").replace(/[ \t]{2,}/g, " ").trim();
+  }
+
+  // Map the on-screen ROI rectangle to raw video pixels (video is object-fit: cover),
+  // crop just that region, and upscale it for the OCR engine.
+  function cropROI() {
+    const stage = $("cameraStage");
+    const frame = stage ? stage.querySelector(".scan-frame") : null;
+    if (!stage || !frame) return null;
+    const VW = video.videoWidth, VH = video.videoHeight;
+    if (!VW || !VH) return null;
+    const sRect = stage.getBoundingClientRect();
+    const fRect = frame.getBoundingClientRect();
+    const CW = sRect.width, CH = sRect.height;
+    if (!CW || !CH) return null;
+    const scale = Math.max(CW / VW, CH / VH);
+    const offX = (VW * scale - CW) / 2, offY = (VH * scale - CH) / 2;
+    let sx = ((fRect.left - sRect.left) + offX) / scale;
+    let sy = ((fRect.top - sRect.top) + offY) / scale;
+    let sw = fRect.width / scale, sh = fRect.height / scale;
+    sx = Math.max(0, Math.min(VW - 1, sx)); sy = Math.max(0, Math.min(VH - 1, sy));
+    sw = Math.max(1, Math.min(VW - sx, sw)); sh = Math.max(1, Math.min(VH - sy, sh));
+    const k = Math.min(3, Math.max(1, 1400 / sw)); // upscale a narrow strip toward ~1400px wide
+    const c = document.createElement("canvas");
+    c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return c;
+  }
 
   captureBtn.addEventListener("click", async () => {
     if (!stream || !video.videoWidth) { startCamera(); return; }
-    const w = video.videoWidth, h = video.videoHeight;
-    canvas.width = w; canvas.height = h;
-    canvas.getContext("2d").drawImage(video, 0, 0, w, h);
+    const roi = cropROI();
+    if (!roi) { setScanMsg("Camera not ready — hold on a second and try again.", "err"); return; }
     captureBtn.disabled = true;
+    setScanMsg("Reading…", "");
     try {
-      const text = await runOCRPanel(canvas, $("langSelect").value, mobileEls);
-      if (isClient()) {
-        const thumb = canvasToJpeg(canvas, 200, 0.6);
-        const sent = publishScan(text, thumb);
-        if (link.client && link.client.connected) {
-          setMobilePair(link.peerPresent ? "linked" : "waiting", sent ? (link.peerPresent ? "Sent to your PC ✓" : "Sent — waiting for your PC to open the page") : "Couldn't send — check your connection");
+      const raw = await ocr(preprocess(roi), $("langSelect").value, null, "7"); // single-line mode
+      const code = cleanCode(raw);
+      if (code) {
+        addCode(code);
+        setScanMsg("Read: " + code, "ok");
+        if (isClient()) {
+          const sent = publishScan(code, canvasToJpeg(roi, 240, 0.6));
+          if (link.client && link.client.connected) {
+            setMobilePair(link.peerPresent ? "linked" : "waiting", sent ? (link.peerPresent ? "Sent to your PC ✓" : "Sent — open the page on your PC") : "Couldn't send — check your connection");
+          }
         }
+      } else {
+        setScanMsg("No code found — line it up inside the box, fill it, and hold steady.", "err");
       }
+    } catch (e) {
+      setScanMsg("Couldn't read: " + ((e && e.message) || e), "err");
     } finally {
       captureBtn.disabled = false;
     }
   });
 
-  $("rescanBtn").addEventListener("click", () => {
-    hide(mobileEls.panel);
-    if (!stream) startCamera();
-    document.querySelector("#view-mobile .camera-stage").scrollIntoView({ behavior: "smooth", block: "center" });
+  $("copyCodesBtn").addEventListener("click", (e) => {
+    const vals = [];
+    codesList.querySelectorAll(".code-input").forEach((inp) => { const v = inp.value.trim(); if (v) vals.push(v); });
+    copyText(vals.join("\n"), e.currentTarget);
+  });
+  $("clearCodesBtn").addEventListener("click", () => {
+    codesList.querySelectorAll(".code-item").forEach((n) => n.remove());
+    updateCodeCount();
+    if (codesEmpty) show(codesEmpty);
   });
 
   /* ================= DESKTOP upload ================= */
@@ -507,7 +569,6 @@
     if (btn) { const old = btn.textContent; btn.textContent = "Copied!"; setTimeout(() => (btn.textContent = old), 1400); }
   }
   function wireCopy(btn, getText) { if (btn) btn.addEventListener("click", () => copyText(getText(), btn)); }
-  wireCopy($("copyBtn"), () => $("resultText").value);
   wireCopy($("copyBtnDesk"), () => $("resultTextDesk").value);
   wireCopy($("copyUrlBtn"), () => $("siteUrl").value);
 

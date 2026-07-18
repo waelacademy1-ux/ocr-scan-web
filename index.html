@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#4f46e5" />
-  <meta name="description" content="Scan text with your phone camera (OCR) right in the browser. Live phone-to-PC mode. No app to install." />
-  <title>Wael Print — Scan text with your camera</title>
+  <meta name="description" content="WaelPrint — a focused code scanner. Line a code up in the box and read it instantly in your browser. Send codes live to a paired PC." />
+  <title>WaelPrint (V2) — Code scanner</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📷</text></svg>" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -15,7 +15,7 @@
     <button id="backBtn" class="back-btn" hidden aria-label="Go back">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
     </button>
-    <span class="brand"><span class="brand-dot" aria-hidden="true">●</span> Wael Print</span>
+    <span class="brand"><span class="brand-dot" aria-hidden="true">●</span> WaelPrint <span class="brand-tag">V2</span></span>
   </header>
 
   <!-- Screen-reader live region for OCR progress/results -->
@@ -23,18 +23,18 @@
 
   <main>
     <!-- ============ VIEW 1: LANDING (choose device) ============ -->
-    <section id="view-landing" class="view active" aria-label="Choose how you're using ScanText">
+    <section id="view-landing" class="view active" aria-label="Choose how you're using WaelPrint">
       <div class="hero">
-        <h1 tabindex="-1">Scan text with your camera</h1>
-        <p class="sub">Point, capture, and pull the text out of any document, sign, or note — right in your browser. Nothing to install.</p>
+        <h1 tabindex="-1">Scan codes with your camera</h1>
+        <p class="sub">Line a code up inside the box and read it instantly — right in your browser. Nothing to install.</p>
       </div>
 
-      <p class="choose-label">How are you using ScanText?</p>
+      <p class="choose-label">How are you using WaelPrint?</p>
       <div class="choice-grid">
         <button class="choice-card" data-go="mobile">
           <span class="choice-icon" aria-hidden="true">📱</span>
           <span class="choice-title">Mobile</span>
-          <span class="choice-desc">Open the camera and scan now</span>
+          <span class="choice-desc">Scan codes with the camera</span>
           <span class="choice-badge" id="badge-mobile" hidden>Recommended for your device</span>
         </button>
         <button class="choice-card" data-go="desktop">
@@ -46,8 +46,8 @@
       </div>
     </section>
 
-    <!-- ============ VIEW 2: MOBILE (camera + OCR) ============ -->
-    <section id="view-mobile" class="view" aria-label="Scan with camera">
+    <!-- ============ VIEW 2: MOBILE (focused code scanner) ============ -->
+    <section id="view-mobile" class="view" aria-label="Scan a code">
       <div id="mobilePair" class="pair-banner" hidden>
         <span class="dot" aria-hidden="true"></span>
         <span id="mobilePairText">Connecting to your PC…</span>
@@ -56,8 +56,8 @@
       <div class="toolbar">
         <label class="field">
           <span>Language</span>
-          <select id="langSelect" aria-label="OCR language">
-            <option value="eng">English</option>
+          <select id="langSelect" aria-label="Code language">
+            <option value="eng">English / numbers</option>
             <option value="fra">Français</option>
             <option value="ara">العربية (Arabic)</option>
             <option value="eng+fra">English + Français</option>
@@ -67,38 +67,37 @@
         </label>
       </div>
 
-      <div id="cameraStage" class="camera-stage">
+      <div id="cameraStage" class="camera-stage code-mode">
         <video id="video" playsinline muted autoplay></video>
-        <div class="scan-frame" aria-hidden="true"></div>
+        <div class="scan-frame" aria-hidden="true">
+          <span class="corner tl"></span><span class="corner tr"></span>
+          <span class="corner bl"></span><span class="corner br"></span>
+          <span class="scanline"></span>
+        </div>
         <div id="camMsg" class="cam-msg" hidden></div>
       </div>
 
-      <p class="tip">For the best read: pick the correct <strong>Language</strong> above, fill the frame with the text, hold steady, and keep good lighting.</p>
+      <p class="tip">Line the <strong>code</strong> up inside the box, then tap <strong>Scan</strong>. Pick the correct <strong>Language</strong> above.</p>
 
       <div class="actions">
         <button id="captureBtn" class="btn btn-primary btn-lg">
-          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="3.2" fill="currentColor"/><path fill="currentColor" d="M9 2 7.17 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3.17L15 2H9zm3 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/></svg>
-          <span id="captureLabel">Capture &amp; scan</span>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="3" y="11" width="18" height="2" rx="1" fill="currentColor"/></svg>
+          <span id="captureLabel">Scan code</span>
         </button>
       </div>
 
-      <canvas id="canvas" hidden></canvas>
+      <p id="scanMsg" class="scan-msg" hidden></p>
 
-      <!-- OCR progress + result -->
-      <div id="ocrPanel" class="ocr-panel" hidden>
-        <div id="progressWrap" class="progress-wrap" hidden>
-          <div class="progress-track" role="progressbar" aria-label="Scan progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progressBar" class="progress-bar"></div></div>
-          <p id="progressLabel" class="progress-label">Preparing…</p>
-        </div>
-        <div id="resultWrap" hidden>
-          <div class="result-head">
-            <h2>Extracted text</h2>
-            <div class="result-actions">
-              <button id="copyBtn" class="btn btn-ghost">Copy</button>
-              <button id="rescanBtn" class="btn btn-ghost">Scan again</button>
-            </div>
+      <div class="codes-block">
+        <div class="result-head">
+          <h2>Scanned codes (<span id="codeCount">0</span>)</h2>
+          <div class="result-actions">
+            <button id="copyCodesBtn" class="btn btn-ghost">Copy all</button>
+            <button id="clearCodesBtn" class="btn btn-ghost">Clear</button>
           </div>
-          <textarea id="resultText" aria-label="Extracted text" spellcheck="false" placeholder="No text detected. Try again with better lighting."></textarea>
+        </div>
+        <div id="codesList" class="codes-list">
+          <p class="codes-empty" id="codesEmpty">No codes yet — line one up in the box above and tap Scan. You can edit any code after.</p>
         </div>
       </div>
     </section>
@@ -179,8 +178,8 @@
   </main>
 
   <footer class="footer">
-    <span>Everything runs on your device — images never leave it. The phone→PC link relays only the text.</span>
-    <span class="ver">Wael Print <span id="version">v4</span> · updated 18 Jul 2026</span>
+    <span>Everything runs on your device — images never leave it. The phone→PC link relays only the code text.</span>
+    <span class="ver">WaelPrint <span id="version">V2</span> · updated 18 Jul 2026</span>
   </footer>
 
   <!-- Libraries (loaded from CDN, integrity-checked) -->
