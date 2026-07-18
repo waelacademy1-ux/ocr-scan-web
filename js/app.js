@@ -6,7 +6,7 @@
  */
 (function () {
   "use strict";
-  var VERSION = "V2";
+  var VERSION = "V2.1";
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
@@ -17,6 +17,12 @@
 
   const BROKER_URL = "wss://broker.emqx.io:8084/mqtt"; // URL-string form required by mqtt.js
   const TOPIC_ROOT = "scantext/v3";
+
+  // Cloud AI reader (accurate) with automatic on-device Tesseract fallback.
+  // User consented to cloud OCR for accuracy. Images are sent to OCR.space to be read.
+  const OCR_SPACE_URL = "https://api.ocr.space/parse/image";
+  const OCR_SPACE_KEY = "helloworld"; // free demo key — replace with your own from https://ocr.space/ocrapi for higher limits
+  let cloudEnabled = true;
 
   const views = { landing: $("view-landing"), mobile: $("view-mobile"), desktop: $("view-desktop") };
   const backBtn = $("backBtn");
@@ -229,6 +235,71 @@
     return p;
   }
 
+  /* ---- cloud AI reader (OCR.space) — sent as a JPEG blob ---- */
+  function sourceToCanvas(source, maxSide) {
+    const sw = source.naturalWidth || source.videoWidth || source.width;
+    const sh = source.naturalHeight || source.videoHeight || source.height;
+    const m = Math.max(sw, sh) || 1;
+    const s = m > maxSide ? maxSide / m : 1;
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(sw * s));
+    c.height = Math.max(1, Math.round(sh * s));
+    c.getContext("2d").drawImage(source, 0, 0, c.width, c.height);
+    return c;
+  }
+  function dataUrlToBlob(d) {
+    const parts = d.split(","), mime = (parts[0].match(/:(.*?);/) || [])[1] || "image/jpeg";
+    const bin = atob(parts[1]), arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  }
+  function sourceToBlob(source, maxSide, q) {
+    const c = sourceToCanvas(source, maxSide);
+    return new Promise((res) => {
+      if (c.toBlob) c.toBlob((b) => res(b || dataUrlToBlob(c.toDataURL("image/jpeg", q))), "image/jpeg", q);
+      else res(dataUrlToBlob(c.toDataURL("image/jpeg", q)));
+    });
+  }
+  function ocrSpaceParams(sel) {
+    if (sel.indexOf("ara") >= 0) return { OCREngine: "1", language: "ara" };
+    if (sel === "fra") return { OCREngine: "1", language: "fre" };
+    return { OCREngine: "2", language: "eng" }; // engine 2 is best for Latin letters+digits
+  }
+  async function ocrCloud(blob, sel) {
+    const pr = ocrSpaceParams(sel);
+    const form = new FormData();
+    form.append("apikey", OCR_SPACE_KEY);
+    form.append("file", blob, "scan.jpg");
+    form.append("language", pr.language);
+    form.append("OCREngine", pr.OCREngine);
+    form.append("scale", "true");
+    form.append("detectOrientation", "true");
+    form.append("isOverlayRequired", "false");
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 20000);
+    let res;
+    try { res = await fetch(OCR_SPACE_URL, { method: "POST", body: form, signal: ctrl.signal }); }
+    finally { clearTimeout(to); }
+    if (!res.ok) throw new Error("cloud OCR http " + res.status);
+    const data = await res.json();
+    if (data.IsErroredOnProcessing) { const m = data.ErrorMessage; throw new Error((Array.isArray(m) ? m[0] : m) || "cloud OCR error"); }
+    const r = data.ParsedResults && data.ParsedResults[0];
+    return r ? (r.ParsedText || "").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim() : "";
+  }
+
+  // Smart OCR: cloud AI first (accurate), automatic on-device fallback.
+  async function ocrSmart(source, sel, psm, progressCb) {
+    if (cloudEnabled && typeof fetch !== "undefined") {
+      try {
+        if (progressCb) progressCb({ status: "recognizing text", progress: 0.4 });
+        const blob = await sourceToBlob(source, 1600, 0.72);
+        const text = await ocrCloud(blob, sel);
+        if (text) { if (progressCb) progressCb({ status: "recognizing text", progress: 1 }); return text; }
+      } catch (e) { if (liveStatus) liveStatus.textContent = "Online reader busy — reading on-device…"; }
+    }
+    return ocr(preprocess(source), sel, progressCb, psm);
+  }
+
   function makeProgress(barEl, labelEl) {
     return (m) => {
       const label = STATUS_LABELS[m.status] || (m.status ? m.status[0].toUpperCase() + m.status.slice(1) : "Working…");
@@ -251,7 +322,7 @@
     if (liveStatus) liveStatus.textContent = "Preparing…";
     els.panel.scrollIntoView({ behavior: "smooth", block: "start" });
     try {
-      const text = await ocr(preprocess(imageSource), lang, makeProgress(els.bar, els.label), "3");
+      const text = await ocrSmart(imageSource, lang, "3", makeProgress(els.bar, els.label));
       els.textarea.value = text;
       hide(els.progressWrap); show(els.resultWrap);
       if (liveStatus) liveStatus.textContent = text ? "Done. Text extracted." : "No text detected.";
@@ -503,7 +574,7 @@
     captureBtn.disabled = true;
     setScanMsg("Reading…", "");
     try {
-      const raw = await ocr(preprocess(roi), $("langSelect").value, null, "7"); // single-line mode
+      const raw = await ocrSmart(roi, $("langSelect").value, "7", null); // cloud AI, on-device fallback
       const code = cleanCode(raw);
       if (code) {
         addCode(code);
