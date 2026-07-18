@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#4f46e5" />
   <meta name="description" content="Scan text with your phone camera (OCR) right in the browser. Live phone-to-PC mode. No app to install." />
-  <title>ScanText — Camera OCR in your browser</title>
+  <title>Wael Print — Scan text with your camera</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📷</text></svg>" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -15,7 +15,7 @@
     <button id="backBtn" class="back-btn" hidden aria-label="Go back">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
     </button>
-    <span class="brand"><span class="brand-dot" aria-hidden="true">●</span> ScanText</span>
+    <span class="brand"><span class="brand-dot" aria-hidden="true">●</span> Wael Print</span>
   </header>
 
   <!-- Screen-reader live region for OCR progress/results -->
@@ -73,7 +73,7 @@
         <div id="camMsg" class="cam-msg" hidden></div>
       </div>
 
-      <p class="tip">Tip: fill the frame with the text, hold steady, and keep good lighting for the best results.</p>
+      <p class="tip">For the best read: pick the correct <strong>Language</strong> above, fill the frame with the text, hold steady, and keep good lighting.</p>
 
       <div class="actions">
         <button id="captureBtn" class="btn btn-primary btn-lg">
@@ -142,7 +142,7 @@
         <div id="dropZone" class="drop-zone">
           <input id="fileInput" type="file" accept="image/*" aria-label="Choose an image to scan" hidden />
           <button id="pickBtn" class="btn btn-primary">Upload an image</button>
-          <p class="drop-hint">PNG, JPG, or a screenshot — we'll pull the text out.</p>
+          <p class="drop-hint">PNG, JPG, or a screenshot. Set the <strong>Language</strong> below to match the text for the best read.</p>
         </div>
 
         <div class="toolbar toolbar-center">
@@ -179,8 +179,8 @@
   </main>
 
   <footer class="footer">
-    <span>OCR runs in your browser. The phone→PC link relays only text through a public broker.</span>
-    <span class="ver">ScanText <span id="version">v3</span> · updated 18 Jul 2026</span>
+    <span>Everything runs on your device — images never leave it. The phone→PC link relays only the text.</span>
+    <span class="ver">Wael Print <span id="version">v4</span> · updated 18 Jul 2026</span>
   </footer>
 
   <!-- Libraries (loaded from CDN, integrity-checked) -->

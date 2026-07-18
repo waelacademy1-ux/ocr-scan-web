@@ -4,7 +4,7 @@
  */
 (function () {
   "use strict";
-  var VERSION = "v3";
+  var VERSION = "v4";
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
@@ -143,25 +143,40 @@
     try { img = ctx.getImageData(0, 0, w, h); } catch (e) { return c; }
     const d = img.data;
 
-    // grayscale + luminance histogram
-    const hist = new Int32Array(256);
+    // grayscale
     const gray = new Uint8ClampedArray(w * h);
     for (let i = 0, p = 0; i < d.length; i += 4, p++) {
-      const g = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
-      gray[p] = g; hist[g]++;
+      gray[p] = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
     }
-    // contrast-stretch between the 2nd and 98th percentiles (ignores specks/glare)
-    const cut = (w * h) * 0.02;
-    let lo = 0, hi = 255, acc = 0;
-    for (let g = 0; g < 256; g++) { acc += hist[g]; if (acc >= cut) { lo = g; break; } }
-    acc = 0;
-    for (let g = 255; g >= 0; g--) { acc += hist[g]; if (acc >= cut) { hi = g; break; } }
-    if (hi <= lo) { lo = 0; hi = 255; }
-    const range = Math.max(1, hi - lo);
-    for (let i = 0, p = 0; i < d.length; i += 4, p++) {
-      let v = ((gray[p] - lo) * 255 / range) | 0;
-      if (v < 0) v = 0; else if (v > 255) v = 255;
-      d[i] = d[i + 1] = d[i + 2] = v;
+    // Bradley–Roth adaptive threshold via an integral image. Unlike a global
+    // threshold, it adapts to local lighting, so shadows/glare on a phone photo
+    // don't wipe out the text — the main cause of garbled reads.
+    const integ = new Uint32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      let rowsum = 0;
+      for (let x = 0; x < w; x++) {
+        rowsum += gray[y * w + x];
+        integ[y * w + x] = (y > 0 ? integ[(y - 1) * w + x] : 0) + rowsum;
+      }
+    }
+    const half = Math.max(4, (w >> 4) >> 1); // ~width/16 neighbourhood
+    const T = 0.15;                           // how much darker than local mean = ink
+    for (let y = 0; y < h; y++) {
+      const y1 = y - half < 0 ? 0 : y - half;
+      const y2 = y + half >= h ? h - 1 : y + half;
+      for (let x = 0; x < w; x++) {
+        const x1 = x - half < 0 ? 0 : x - half;
+        const x2 = x + half >= w ? w - 1 : x + half;
+        const count = (x2 - x1 + 1) * (y2 - y1 + 1);
+        const A = (x1 > 0 && y1 > 0) ? integ[(y1 - 1) * w + (x1 - 1)] : 0;
+        const B = (y1 > 0) ? integ[(y1 - 1) * w + x2] : 0;
+        const C = (x1 > 0) ? integ[y2 * w + (x1 - 1)] : 0;
+        const sum = integ[y2 * w + x2] - B - C + A;
+        const p = y * w + x;
+        const o = (gray[p] * count) <= (sum * (1 - T)) ? 0 : 255;
+        const idx = p << 2;
+        d[idx] = d[idx + 1] = d[idx + 2] = o;
+      }
     }
     ctx.putImageData(img, 0, 0);
     return c;
