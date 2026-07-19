@@ -6,7 +6,7 @@
  */
 (function () {
   "use strict";
-  var VERSION = "V3.5";
+  var VERSION = "V3.6";
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
@@ -772,6 +772,7 @@
     if (!printDir) { setPrintMsg("Connect the print folder first.", "err"); return; }
     const codes = parseCodes(codesInput ? codesInput.value : "");
     if (!codes.length) { setPrintMsg("No codes to open — scan or type some (e.g. HG1-CN7).", "err"); return; }
+    if (codesInput) codesInput.value = codes.join(" "); // collapse duplicates -> each file opens once
     const found = [], notFound = [];
     codes.forEach((c) => (fileMap[c] ? found : notFound).push(c));
     const fb = $("openFallback"); if (fb) { fb.innerHTML = ""; hide(fb); }
