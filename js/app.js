@@ -6,7 +6,7 @@
  */
 (function () {
   "use strict";
-  var VERSION = "V3.3";
+  var VERSION = "V3.4";
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
@@ -722,46 +722,25 @@
     const cur = codesInput.value.trim();
     codesInput.value = (cur ? cur + " " : "") + normName(code);
   }
-  // ALL files of one scan open together in ONE new window (single pop-up = reliable).
-  function groupFeatures() {
-    const sw = screen.availWidth || 1280, sh = screen.availHeight || 800;
-    const w = Math.floor(sw * 0.92), h = Math.floor(sh * 0.92);
-    return "width=" + w + ",height=" + h + ",left=" + Math.floor((sw - w) / 2) + ",top=" + Math.floor((sh - h) / 2);
+  // open each found file as its own new TAB (no window features -> a tab, not a
+  // separate window; the tabs open together in the same browser window).
+  function openInTab(url, code) {
+    try { return window.open(url, "wp_" + code); } catch (_) { return null; }
   }
-  function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-  function buildViewerHtml(parts) {
-    const title = escapeHtml(parts.map((p) => p.code).join(", "));
-    const rows = parts.map((p) =>
-      '<div class="doc"><div class="lbl">' + escapeHtml(p.code) + '</div><iframe src="' + p.url + '" title="' + escapeHtml(p.code) + '"></iframe></div>'
-    ).join("");
-    return '<!doctype html><html><head><meta charset="utf-8"><title>WaelPrint — ' + title + '</title>' +
-      '<style>*{box-sizing:border-box}html,body{margin:0;padding:0;background:#2a2d34}' +
-      '.doc{position:relative;width:100%;height:100vh;border-bottom:3px solid #111}' +
-      '.lbl{position:absolute;top:10px;left:10px;z-index:2;background:rgba(17,17,17,.85);color:#fff;font:600 13px system-ui,Arial,sans-serif;padding:4px 11px;border-radius:8px}' +
-      'iframe{border:0;width:100%;height:100%;display:block;background:#fff}</style></head><body>' + rows + '</body></html>';
-  }
-  function writeViewer(win, parts) {
-    try {
-      if (parts.length === 1) { win.location.href = parts[0].url; return true; } // single -> native PDF view
-      win.document.open(); win.document.write(buildViewerHtml(parts)); win.document.close(); return true;
-    } catch (e) { return false; }
-  }
-  function groupFallback(parts) {
+  function showBlockedFallback(blocked) {
     const box = $("openFallback"); if (!box) return;
     box.innerHTML = "";
     const note = document.createElement("p");
     note.className = "fallback-note";
-    note.textContent = "Your browser blocked the window. Click to open the file(s) in one window:";
+    note.textContent = "Your browser blocked the extra tab(s). Click to open each — or allow pop-ups for this site (address-bar icon, then Always allow) so both tabs open together next time.";
     box.appendChild(note);
-    const btn = document.createElement("button");
-    btn.className = "btn btn-primary fallback-btn"; btn.type = "button";
-    btn.textContent = "Open " + parts.map((p) => p.code).join(", ");
-    btn.addEventListener("click", () => {
-      let w = null; try { w = window.open("", "wp_group_" + now(), groupFeatures()); } catch (_) {}
-      if (w) writeViewer(w, parts);
-      btn.disabled = true; btn.textContent = "Opened";
+    blocked.forEach((b) => {
+      const btn = document.createElement("button");
+      btn.className = "btn btn-primary fallback-btn"; btn.type = "button";
+      btn.textContent = "Open " + b.code;
+      btn.addEventListener("click", () => { const w = openInTab(b.url, b.code); if (w) { try { w.focus(); } catch (_) {} } btn.disabled = true; btn.textContent = "Opened " + b.code; });
+      box.appendChild(btn);
     });
-    box.appendChild(btn);
     show(box);
   }
   async function openFiles() {
@@ -772,31 +751,26 @@
     const found = [], notFound = [];
     codes.forEach((c) => (fileMap[c] ? found : notFound).push(c));
     const fb = $("openFallback"); if (fb) { fb.innerHTML = ""; hide(fb); }
-    // Pre-open the ONE window inside the click (a single pop-up is allowed), fill it after.
-    let win = null;
-    if (found.length) {
-      try { win = window.open("", "wp_group_" + now(), groupFeatures()); } catch (_) { win = null; }
-      if (win) { try { win.document.write('<!doctype html><meta charset="utf-8"><title>WaelPrint</title><body style="font:16px system-ui,Arial,sans-serif;padding:26px;color:#444;background:#f4f5fb">Loading file(s)…</body>'); win.document.close(); } catch (_) {} }
-    }
+    // Pre-open a blank TAB per found file INSIDE the click (dodges the pop-up blocker);
+    // navigated to the PDFs immediately, or after 3s in the mixed case.
+    const tabs = found.map((c) => openInTab("", c));
     let msg = "";
     if (notFound.length) msg = (notFound.length === 1 ? "Code " : "Codes ") + notFound.join(", ") + " — out of the database";
-    if (found.length) msg += (msg ? " · " : "") + "opening " + found.join(", ") + " in one window";
+    if (found.length) msg += (msg ? " · " : "") + "opening " + found.join(", ") + " in " + (found.length === 1 ? "a new tab" : found.length + " tabs");
     setPrintMsg(msg, notFound.length ? (found.length ? "warn" : "err") : "ok");
     const delay = (notFound.length && found.length) ? 3000 : 0; // show the "out" note first, then open
     setTimeout(async () => {
-      if (!found.length) return;
-      const parts = [];
+      const blocked = [];
       for (let i = 0; i < found.length; i++) {
         try {
           const file = await fileMap[found[i]].getFile();
           const url = URL.createObjectURL(file);
-          parts.push({ code: found[i], url: url });
-          setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 600000);
-        } catch (e) { /* skip unreadable file */ }
+          if (tabs[i] && !tabs[i].closed) { tabs[i].location.href = url; }
+          else { blocked.push({ code: found[i], url: url }); }
+          setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 300000);
+        } catch (e) { if (tabs[i]) { try { tabs[i].close(); } catch (_) {} } }
       }
-      if (!parts.length) { if (win && !win.closed) { try { win.close(); } catch (_) {} } return; }
-      if (win && !win.closed && writeViewer(win, parts)) { /* opened */ }
-      else groupFallback(parts);
+      if (blocked.length) showBlockedFallback(blocked);
     }, delay);
   }
 
