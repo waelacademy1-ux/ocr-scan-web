@@ -6,7 +6,7 @@
  */
 (function () {
   "use strict";
-  var VERSION = "V3.9";
+  var VERSION = "V4.0";
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
@@ -867,28 +867,37 @@
     const m = stripAccents(String(text || "")).match(/bon\s+de\s+livraison[^0-9]*([0-9]{3,})/i);
     return m ? m[1] : "";
   }
-  async function handleFacture(file) {
-    const okType = /^image\//.test(file.type) || file.type === "application/pdf" || /\.(png|jpe?g|webp|pdf)$/i.test(file.name || "");
-    if (!okType) { setPrintMsg("Please choose an image or PDF of the delivery note.", "err"); return; }
-    setPrintMsg("Reading the delivery note…", "");
-    try {
-      const text = await ocrCloudFile(file);
-      const raw = extractDesignationCodes(text);
-      if (!raw.length) { setPrintMsg("Couldn't find a code under “Désignation”. Try a clearer scan, or use “+ Add section” and type it.", "err"); return; }
-      const codes = parseCodes(raw.join(" "));
-      const no = extractNoteNumber(text);
-      const s = addSection(codes, no ? ("Note " + no) : "Delivery note");
-      if (s && s.sec) { try { s.sec.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch (_) {} }
-      setPrintMsg("Added " + (no ? ("note " + no) : "a note") + " → " + codes.join(", ") + ". Click its “Open files”.", "ok");
-    } catch (e) {
-      setPrintMsg("Couldn't read the delivery note: " + ((e && e.message) || e), "err");
+  // Read one OR MANY delivery notes in a single action; each becomes its own order.
+  async function handleFactures(files) {
+    const list = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      if (/^image\//.test(f.type) || f.type === "application/pdf" || /\.(png|jpe?g|webp|pdf)$/i.test(f.name || "")) list.push(f);
     }
+    if (!list.length) { setPrintMsg("Please choose image or PDF delivery notes.", "err"); return; }
+    let made = 0, empty = 0, firstSec = null;
+    for (let i = 0; i < list.length; i++) {
+      const f = list[i];
+      setPrintMsg("Reading note " + (i + 1) + " of " + list.length + "…", "");
+      let codes = [], no = "";
+      try {
+        const text = await ocrCloudFile(f);
+        no = extractNoteNumber(text);
+        codes = parseCodes(extractDesignationCodes(text).join(" "));
+      } catch (e) { /* leave empty -> user types the code */ }
+      const title = no ? ("Note " + no) : (f.name ? f.name.replace(/\.[^.]+$/, "") : ("Order " + (i + 1)));
+      const s = codes.length ? addSection(codes, title) : addSection([], title + " — type the code");
+      if (codes.length) made++; else empty++;
+      if (!firstSec && s) firstSec = s;
+    }
+    if (firstSec && firstSec.sec) { try { firstSec.sec.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch (_) {} }
+    setPrintMsg("Created " + made + " order" + (made === 1 ? "" : "s") + (empty ? (" · " + empty + " couldn't be read — type the code") : "") + ". Click each order's “Open files”.", made ? "ok" : "err");
   }
 
   if ($("connectFolderBtn")) $("connectFolderBtn").addEventListener("click", connectFolder);
   if ($("refreshFolderBtn")) $("refreshFolderBtn").addEventListener("click", async () => { if (printDir) await useDir(printDir, false); });
   if ($("factureBtn")) $("factureBtn").addEventListener("click", () => $("factureInput").click());
-  if ($("factureInput")) $("factureInput").addEventListener("change", () => { const f = $("factureInput").files && $("factureInput").files[0]; if (f) handleFacture(f); $("factureInput").value = ""; });
+  if ($("factureInput")) $("factureInput").addEventListener("change", () => { const f = $("factureInput").files; if (f && f.length) handleFactures(f); $("factureInput").value = ""; });
   if ($("addSectionBtn")) $("addSectionBtn").addEventListener("click", () => { const s = addSection([], "Order " + (sectionSeq + 1)); if (s && s.inp) s.inp.focus(); });
 
   /* ================= copy ================= */
