@@ -6,7 +6,7 @@
  */
 (function () {
   "use strict";
-  var VERSION = "V3.6";
+  var VERSION = "V3.7";
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
@@ -633,6 +633,7 @@
   /* ================= DESKTOP: open print files by code (File System Access) ================= */
   let printDir = null;   // FileSystemDirectoryHandle for e.g. D:\wael\Wael print
   const fileMap = {};    // NORMALIZED name/basename -> FileSystemFileHandle (the "database")
+  const fileCodeList = []; // unique base-name codes, for the "in your folder" chips
   const fsaSupported = (typeof window.showDirectoryPicker === "function");
   const codesInput = $("codesInput");
 
@@ -661,6 +662,8 @@
   // parent (e.g. D:\ or D:\wael) and it still finds HG1.pdf deep inside a subfolder.
   async function refreshFileMap() {
     for (const k in fileMap) delete fileMap[k];
+    fileCodeList.length = 0;
+    const codeSeen = {};
     if (!printDir) return 0;
     const MAX_FILES = 20000, MAX_DEPTH = 10;
     let n = 0;
@@ -675,6 +678,7 @@
             const full = normName(entry.name), base = normName(baseName(entry.name));
             if (!fileMap[full]) fileMap[full] = entry;   // first match wins
             if (!fileMap[base]) fileMap[base] = entry;   // so HG1 -> HG1.pdf
+            if (!codeSeen[base]) { codeSeen[base] = 1; fileCodeList.push(base); }
             n++;
           } else if (entry.kind === "directory") {
             await walk(entry, depth + 1);
@@ -683,13 +687,37 @@
       } catch (_) {}
     }
     await walk(printDir, 0);
+    fileCodeList.sort();
     return n;
+  }
+  function renderAvailCodes() {
+    const box = $("availCodes"); if (!box) return;
+    box.innerHTML = "";
+    if (!fileCodeList.length) { hide(box); return; }
+    const label = document.createElement("span");
+    label.className = "avail-label"; label.textContent = "In your folder:";
+    box.appendChild(label);
+    const MAX = 80;
+    fileCodeList.slice(0, MAX).forEach((code) => {
+      const chip = document.createElement("button");
+      chip.className = "avail-chip"; chip.type = "button"; chip.textContent = code;
+      chip.title = "Add " + code + " to the codes box";
+      chip.addEventListener("click", () => appendCodeToInput(code));
+      box.appendChild(chip);
+    });
+    if (fileCodeList.length > MAX) {
+      const more = document.createElement("span");
+      more.className = "avail-more"; more.textContent = "+" + (fileCodeList.length - MAX) + " more";
+      box.appendChild(more);
+    }
+    show(box);
   }
   async function useDir(handle, remember) {
     printDir = handle;
     setFolderStatus("scanning", "Scanning " + (handle.name || "folder") + " (incl. subfolders)…");
     const n = await refreshFileMap();
     setFolderStatus("ok", (handle.name || "Folder") + " · " + n + " file" + (n === 1 ? "" : "s") + " found");
+    renderAvailCodes();
     if (remember) { try { await idb("set", handle); } catch (_) {} }
   }
   async function connectFolder() {
