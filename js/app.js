@@ -6,7 +6,7 @@
  */
 (function () {
   "use strict";
-  var VERSION = "V3.8";
+  var VERSION = "V3.9";
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
@@ -634,7 +634,6 @@
   let printDir = null;   // FileSystemDirectoryHandle for e.g. D:\wael\Wael print
   const fileMap = {};    // NORMALIZED name/basename -> FileSystemFileHandle (the "database")
   const fsaSupported = (typeof window.showDirectoryPicker === "function");
-  const codesInput = $("codesInput");
 
   // remember the chosen folder between visits (IndexedDB can store the handle)
   function idb(op, val) {
@@ -717,10 +716,42 @@
     if (!text) { hide(m); return; }
     m.textContent = text; m.setAttribute("data-kind", kind || ""); show(m);
   }
+  /* ---- sections: one per order / delivery note, each with its own "Open files" ---- */
+  const sectionsList = $("sectionsList");
+  const sectionsEmpty = $("sectionsEmpty");
+  let sectionSeq = 0;
+
+  function setSecMsg(el, text, kind) {
+    if (!el) return;
+    if (!text) { el.hidden = true; return; }
+    el.textContent = text; el.setAttribute("data-kind", kind || ""); el.hidden = false;
+  }
+  function addSection(codesArr, title) {
+    if (!sectionsList) return null;
+    if (sectionsEmpty) hide(sectionsEmpty);
+    const sec = document.createElement("div"); sec.className = "section";
+    const head = document.createElement("div"); head.className = "section-head";
+    const t = document.createElement("span"); t.className = "section-title"; t.textContent = title || ("Order " + (++sectionSeq));
+    const openBtn = document.createElement("button"); openBtn.className = "btn btn-primary section-open"; openBtn.type = "button"; openBtn.textContent = "Open files";
+    const delBtn = document.createElement("button"); delBtn.className = "btn btn-ghost section-del"; delBtn.type = "button"; delBtn.textContent = "✕"; delBtn.title = "Remove"; delBtn.setAttribute("aria-label", "Remove this order");
+    head.appendChild(t); head.appendChild(openBtn); head.appendChild(delBtn);
+    const inp = document.createElement("input"); inp.className = "code-input section-codes"; inp.type = "text"; inp.spellcheck = false; inp.setAttribute("aria-label", "Codes for this order"); inp.placeholder = "e.g. HG1-CN7-SSY";
+    inp.value = (codesArr && codesArr.length) ? codesArr.join(" ") : "";
+    const msg = document.createElement("p"); msg.className = "section-msg"; msg.hidden = true;
+    sec.appendChild(head); sec.appendChild(inp); sec.appendChild(msg);
+    openBtn.addEventListener("click", () => openSection(inp, msg));
+    delBtn.addEventListener("click", () => { sec.remove(); if (sectionsList && !sectionsList.querySelector(".section") && sectionsEmpty) show(sectionsEmpty); });
+    sectionsList.insertBefore(sec, sectionsList.firstChild); // newest on top
+    return { sec: sec, inp: inp, msg: msg };
+  }
+  function getActiveSection() {
+    if (sectionsList) { const s = sectionsList.querySelector(".section"); if (s) return { sec: s, inp: s.querySelector(".section-codes"), msg: s.querySelector(".section-msg") }; }
+    return addSection([], "Order " + (sectionSeq + 1));
+  }
   function appendCodeToInput(code) {
-    if (!codesInput) return;
-    const cur = codesInput.value.trim();
-    codesInput.value = (cur ? cur + " " : "") + normName(code);
+    const s = getActiveSection(); if (!s || !s.inp) return;
+    const cur = s.inp.value.trim();
+    s.inp.value = (cur ? cur + " " : "") + normName(code);
   }
   // ALL files open TOGETHER in ONE new window, separate from this page. It's a
   // single pop-up (always allowed) so 2+ files reliably open at the same time.
@@ -749,43 +780,25 @@
       win.document.open(); win.document.write(buildViewerHtml(parts)); win.document.close(); return true;
     } catch (e) { return false; }
   }
-  function groupFallback(parts) {
-    const box = $("openFallback"); if (!box) return;
-    box.innerHTML = "";
-    const note = document.createElement("p");
-    note.className = "fallback-note";
-    note.textContent = "Your browser blocked the window. Click to open the file(s):";
-    box.appendChild(note);
-    const btn = document.createElement("button");
-    btn.className = "btn btn-primary fallback-btn"; btn.type = "button";
-    btn.textContent = "Open " + parts.map((p) => p.code).join(", ");
-    btn.addEventListener("click", () => {
-      let w = null; try { w = window.open("", "wp_group_" + now(), groupFeatures()); } catch (_) {}
-      if (w) writeViewer(w, parts);
-      btn.disabled = true; btn.textContent = "Opened";
-    });
-    box.appendChild(btn);
-    show(box);
-  }
-  async function openFiles() {
-    if (!fsaSupported) { setPrintMsg("Open this page in Edge or Chrome to open local files.", "err"); return; }
-    if (!printDir) { setPrintMsg("Connect the print folder first.", "err"); return; }
-    const codes = parseCodes(codesInput ? codesInput.value : "");
-    if (!codes.length) { setPrintMsg("No codes to open — scan or type some (e.g. HG1-CN7).", "err"); return; }
-    if (codesInput) codesInput.value = codes.join(" "); // collapse duplicates -> each file opens once
+  // Open one section's files together in a single new window.
+  function openSection(inp, msgEl) {
+    if (!fsaSupported) { setSecMsg(msgEl, "Open this page in Edge or Chrome to open local files.", "err"); return; }
+    if (!printDir) { setSecMsg(msgEl, "Connect the print folder first (button above).", "err"); return; }
+    const codes = parseCodes(inp.value);
+    if (!codes.length) { setSecMsg(msgEl, "No codes — type e.g. HG1-CN7-SSY.", "err"); return; }
+    inp.value = codes.join(" "); // collapse duplicates -> each file opens once
     const found = [], notFound = [];
     codes.forEach((c) => (fileMap[c] ? found : notFound).push(c));
-    const fb = $("openFallback"); if (fb) { fb.innerHTML = ""; hide(fb); }
     // Pre-open the ONE separate window inside the click (single pop-up is allowed), fill after.
     let win = null;
     if (found.length) {
-      try { win = window.open("", "wp_group_" + now(), groupFeatures()); } catch (_) { win = null; }
+      try { win = window.open("", "wp_grp_" + now(), groupFeatures()); } catch (_) { win = null; }
       if (win) { try { win.document.write('<!doctype html><meta charset="utf-8"><title>WaelPrint</title><body style="font:16px system-ui,Arial,sans-serif;padding:26px;color:#444;background:#f4f5fb">Loading file(s)…</body>'); win.document.close(); } catch (_) {} }
     }
     let msg = "";
     if (notFound.length) msg = (notFound.length === 1 ? "Code " : "Codes ") + notFound.join(", ") + " — out of the database";
     if (found.length) msg += (msg ? " · " : "") + "opening " + found.join(", ") + " in a new window";
-    setPrintMsg(msg, notFound.length ? (found.length ? "warn" : "err") : "ok");
+    setSecMsg(msgEl, msg, notFound.length ? (found.length ? "warn" : "err") : "ok");
     const delay = (notFound.length && found.length) ? 3000 : 0; // show the "out" note first, then open
     setTimeout(async () => {
       if (!found.length) return;
@@ -800,7 +813,7 @@
       }
       if (!parts.length) { if (win && !win.closed) { try { win.close(); } catch (_) {} } return; }
       if (win && !win.closed && writeViewer(win, parts)) { /* opened */ }
-      else groupFallback(parts);
+      else setSecMsg(msgEl, "Pop-up blocked — allow pop-ups for this site, then click Open files again.", "err");
     }, delay);
   }
 
@@ -850,33 +863,33 @@
     }
     return codes;
   }
+  function extractNoteNumber(text) {
+    const m = stripAccents(String(text || "")).match(/bon\s+de\s+livraison[^0-9]*([0-9]{3,})/i);
+    return m ? m[1] : "";
+  }
   async function handleFacture(file) {
     const okType = /^image\//.test(file.type) || file.type === "application/pdf" || /\.(png|jpe?g|webp|pdf)$/i.test(file.name || "");
     if (!okType) { setPrintMsg("Please choose an image or PDF of the delivery note.", "err"); return; }
-    const fb = $("openFallback"); if (fb) { fb.innerHTML = ""; hide(fb); }
     setPrintMsg("Reading the delivery note…", "");
     try {
       const text = await ocrCloudFile(file);
       const raw = extractDesignationCodes(text);
-      if (!raw.length) { setPrintMsg("Couldn't find a code under “Désignation”. Try a clearer scan, or type the code.", "err"); return; }
-      if (codesInput) {
-        const cur = codesInput.value.trim();
-        codesInput.value = (cur ? cur + " " : "") + raw.join(" ");
-        const codes = parseCodes(codesInput.value);
-        codesInput.value = codes.join(" ");
-        setPrintMsg("Found under Désignation: " + codes.join(", ") + " — click Open files.", "ok");
-      }
+      if (!raw.length) { setPrintMsg("Couldn't find a code under “Désignation”. Try a clearer scan, or use “+ Add section” and type it.", "err"); return; }
+      const codes = parseCodes(raw.join(" "));
+      const no = extractNoteNumber(text);
+      const s = addSection(codes, no ? ("Note " + no) : "Delivery note");
+      if (s && s.sec) { try { s.sec.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch (_) {} }
+      setPrintMsg("Added " + (no ? ("note " + no) : "a note") + " → " + codes.join(", ") + ". Click its “Open files”.", "ok");
     } catch (e) {
       setPrintMsg("Couldn't read the delivery note: " + ((e && e.message) || e), "err");
     }
   }
 
   if ($("connectFolderBtn")) $("connectFolderBtn").addEventListener("click", connectFolder);
-  if ($("openFilesBtn")) $("openFilesBtn").addEventListener("click", openFiles);
-  if ($("clearCodesInputBtn")) $("clearCodesInputBtn").addEventListener("click", () => { if (codesInput) codesInput.value = ""; setPrintMsg("", ""); });
   if ($("refreshFolderBtn")) $("refreshFolderBtn").addEventListener("click", async () => { if (printDir) await useDir(printDir, false); });
   if ($("factureBtn")) $("factureBtn").addEventListener("click", () => $("factureInput").click());
   if ($("factureInput")) $("factureInput").addEventListener("change", () => { const f = $("factureInput").files && $("factureInput").files[0]; if (f) handleFacture(f); $("factureInput").value = ""; });
+  if ($("addSectionBtn")) $("addSectionBtn").addEventListener("click", () => { const s = addSection([], "Order " + (sectionSeq + 1)); if (s && s.inp) s.inp.focus(); });
 
   /* ================= copy ================= */
   async function copyText(text, btn) {

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#4f46e5" />
   <meta name="description" content="WaelPrint — a focused code scanner. Line a code up in the box and read it instantly in your browser. Send codes live to a paired PC." />
-  <title>WaelPrint (V3.8) — Print by code</title>
+  <title>WaelPrint (V3.9) — Print by code</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📷</text></svg>" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -15,7 +15,7 @@
     <button id="backBtn" class="back-btn" hidden aria-label="Go back">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
     </button>
-    <span class="brand"><span class="brand-dot" aria-hidden="true">●</span> WaelPrint <span class="brand-tag">V3.8</span></span>
+    <span class="brand"><span class="brand-dot" aria-hidden="true">●</span> WaelPrint <span class="brand-tag">V3.9</span></span>
   </header>
 
   <!-- Screen-reader live region for OCR progress/results -->
@@ -117,24 +117,20 @@
           </div>
 
           <div class="print-row">
-            <button id="factureBtn" class="btn btn-ghost">📄 Read a delivery note (image / PDF)</button>
+            <button id="factureBtn" class="btn btn-primary">📄 Read a delivery note (image / PDF)</button>
             <input id="factureInput" type="file" accept="image/*,application/pdf" aria-label="Choose a delivery note image or PDF" hidden />
-            <span class="print-hint">reads the code under “Désignation”</span>
+            <button id="addSectionBtn" class="btn btn-ghost">+ Add order</button>
+            <span class="print-hint">each note becomes an order with its own “Open files”</span>
           </div>
 
-          <label class="print-field">
-            <span>Codes to open <small>— any separator works: HG1-CN7, HG1, CN7, HG1.CN7; phone scans land here too</small></span>
-            <textarea id="codesInput" spellcheck="false" placeholder="e.g.  HG1-CN7"></textarea>
-          </label>
-          <div class="print-actions">
-            <button id="openFilesBtn" class="btn btn-primary btn-lg">Open files</button>
-            <button id="clearCodesInputBtn" class="btn btn-ghost">Clear</button>
-          </div>
           <p id="printMsg" class="print-msg" hidden></p>
-          <div id="openFallback" class="open-fallback" hidden></div>
+
+          <div id="sectionsList" class="sections-list">
+            <p id="sectionsEmpty" class="sections-empty">No orders yet — read a delivery note (or “+ Add order”) to create one, then click its “Open files”.</p>
+          </div>
         </div>
 
-        <div class="divider"><span>link your phone to scan codes into the box</span></div>
+        <div class="divider"><span>link your phone — scans go into the newest order</span></div>
 
         <div class="pair-status" id="pairStatus" data-state="starting">
           <span class="dot" aria-hidden="true"></span>
@@ -206,7 +202,7 @@
 
   <footer class="footer">
     <span>Codes read by an online AI engine (OCR.space) with an on-device fallback. Your PDFs stay on your PC — opened straight from your folder via the browser (Edge / Chrome).</span>
-    <span class="ver">WaelPrint <span id="version">V3.8</span> · updated 19 Jul 2026</span>
+    <span class="ver">WaelPrint <span id="version">V3.9</span> · updated 19 Jul 2026</span>
   </footer>
 
   <!-- Libraries (loaded from CDN, integrity-checked) -->

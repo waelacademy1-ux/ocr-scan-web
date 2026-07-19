@@ -279,6 +279,21 @@ textarea:focus, .field select:focus, .btn:focus-visible, .back-btn:focus-visible
 .open-fallback { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .fallback-note { margin: 0 0 2px; font-size: .85rem; color: var(--text-soft); }
 .fallback-btn { align-self: flex-start; }
+
+/* orders / sections (one per delivery note) */
+.sections-list { display: flex; flex-direction: column; gap: 12px; margin-top: 6px; }
+.sections-empty { color: var(--text-soft); font-size: .9rem; text-align: center; padding: 18px 12px; margin: 0; border: 1px dashed var(--border); border-radius: 12px; }
+.section { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); padding: 12px 14px; animation: fade .25s ease both; }
+.section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.section-title { font-weight: 700; font-size: .95rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.section-open { padding: 8px 14px; }
+.section-del { padding: 8px 11px; color: var(--danger); }
+.section-codes { width: 100%; }
+.section-msg { margin: 10px 0 0; padding: 9px 12px; border-radius: 10px; font-size: .88rem; font-weight: 600; border: 1px solid var(--border); color: var(--text-soft); overflow-wrap: anywhere; }
+.section-msg[data-kind="ok"] { color: #15803d; background: color-mix(in srgb, #16a34a 12%, var(--surface)); border-color: color-mix(in srgb, #16a34a 40%, var(--border)); }
+.section-msg[data-kind="warn"] { color: #b45309; background: color-mix(in srgb, #f59e0b 14%, var(--surface)); border-color: color-mix(in srgb, #f59e0b 45%, var(--border)); }
+.section-msg[data-kind="err"] { color: #b91c1c; background: color-mix(in srgb, #dc2626 10%, var(--surface)); border-color: color-mix(in srgb, #dc2626 35%, var(--border)); }
+@media (prefers-color-scheme: dark) { .section-msg[data-kind="ok"] { color: #4ade80; } .section-msg[data-kind="err"] { color: #f87171; } .section-msg[data-kind="warn"] { color: #fbbf24; } }
 @media (prefers-color-scheme: dark) {
   .folder-status[data-state="ok"], .print-msg[data-kind="ok"] { color: #4ade80; }
   .folder-status[data-state="err"], .print-msg[data-kind="err"] { color: #f87171; }
