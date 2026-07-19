@@ -6,7 +6,7 @@
  */
 (function () {
   "use strict";
-  var VERSION = "V3.7";
+  var VERSION = "V3.8";
 
   /* ---------- helpers ---------- */
   const $ = (id) => document.getElementById(id);
@@ -804,10 +804,79 @@
     }, delay);
   }
 
+  /* ---- read a delivery note (facture): OCR the image/PDF, grab the code under "Désignation" ---- */
+  function stripAccents(s) { return (s && s.normalize) ? s.normalize("NFD").replace(/[̀-ͯ]/g, "") : String(s || ""); }
+  async function ocrCloudFile(file) {
+    const isPdf = (file.type === "application/pdf") || /\.pdf$/i.test(file.name || "");
+    const form = new FormData();
+    form.append("apikey", OCR_SPACE_KEY);
+    form.append("file", file, file.name || (isPdf ? "note.pdf" : "note.jpg"));
+    form.append("language", "eng");
+    form.append("OCREngine", isPdf ? "1" : "2"); // engine 1 supports PDF; 2 is best for images
+    form.append("scale", "true");
+    form.append("isTable", "true");            // keeps the table columns readable
+    form.append("detectOrientation", "true");
+    form.append("isOverlayRequired", "false");
+    if (isPdf) form.append("filetype", "PDF");
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 30000);
+    let res;
+    try { res = await fetch(OCR_SPACE_URL, { method: "POST", body: form, signal: ctrl.signal }); }
+    finally { clearTimeout(to); }
+    if (!res.ok) throw new Error("OCR http " + res.status);
+    const data = await res.json();
+    if (data.IsErroredOnProcessing) { const m = data.ErrorMessage; throw new Error((Array.isArray(m) ? m[0] : m) || "OCR error"); }
+    const r = data.ParsedResults && data.ParsedResults[0];
+    return r ? (r.ParsedText || "") : "";
+  }
+  // Pull the code(s) that sit under the "Désignation" column of a delivery note.
+  function extractDesignationCodes(text) {
+    const lines = String(text || "").split(/\r?\n/);
+    let start = -1;
+    for (let i = 0; i < lines.length; i++) { if (/designation/i.test(stripAccents(lines[i]))) { start = i; break; } }
+    if (start < 0) { return parseCodes(text).filter((c) => fileMap[c]); } // header missing -> match known files
+    const codes = [];
+    const stop = /total\s*(ht|ttc)|tva/i;
+    const skip = /^(pu|qte|total|prix|ref|designation|date|bon|tva|depot|compte|nom|gov|adresse|tel|mf|dt|ht|ttc|non|oui)$/i;
+    for (let i = start + 1; i < lines.length; i++) {
+      const ln = stripAccents(lines[i]).trim();
+      if (!ln) continue;
+      if (stop.test(ln)) break;
+      const tokens = ln.split(/\s+/);
+      for (let j = 0; j < tokens.length; j++) {
+        const cl = tokens[j].replace(/[^A-Za-z0-9-]/g, "");
+        if (/[A-Za-z]/.test(cl) && cl.length >= 2 && !skip.test(cl)) { codes.push(cl); break; }
+      }
+    }
+    return codes;
+  }
+  async function handleFacture(file) {
+    const okType = /^image\//.test(file.type) || file.type === "application/pdf" || /\.(png|jpe?g|webp|pdf)$/i.test(file.name || "");
+    if (!okType) { setPrintMsg("Please choose an image or PDF of the delivery note.", "err"); return; }
+    const fb = $("openFallback"); if (fb) { fb.innerHTML = ""; hide(fb); }
+    setPrintMsg("Reading the delivery note…", "");
+    try {
+      const text = await ocrCloudFile(file);
+      const raw = extractDesignationCodes(text);
+      if (!raw.length) { setPrintMsg("Couldn't find a code under “Désignation”. Try a clearer scan, or type the code.", "err"); return; }
+      if (codesInput) {
+        const cur = codesInput.value.trim();
+        codesInput.value = (cur ? cur + " " : "") + raw.join(" ");
+        const codes = parseCodes(codesInput.value);
+        codesInput.value = codes.join(" ");
+        setPrintMsg("Found under Désignation: " + codes.join(", ") + " — click Open files.", "ok");
+      }
+    } catch (e) {
+      setPrintMsg("Couldn't read the delivery note: " + ((e && e.message) || e), "err");
+    }
+  }
+
   if ($("connectFolderBtn")) $("connectFolderBtn").addEventListener("click", connectFolder);
   if ($("openFilesBtn")) $("openFilesBtn").addEventListener("click", openFiles);
   if ($("clearCodesInputBtn")) $("clearCodesInputBtn").addEventListener("click", () => { if (codesInput) codesInput.value = ""; setPrintMsg("", ""); });
   if ($("refreshFolderBtn")) $("refreshFolderBtn").addEventListener("click", async () => { if (printDir) await useDir(printDir, false); });
+  if ($("factureBtn")) $("factureBtn").addEventListener("click", () => $("factureInput").click());
+  if ($("factureInput")) $("factureInput").addEventListener("change", () => { const f = $("factureInput").files && $("factureInput").files[0]; if (f) handleFacture(f); $("factureInput").value = ""; });
 
   /* ================= copy ================= */
   async function copyText(text, btn) {

@@ -266,6 +266,7 @@ textarea:focus, .field select:focus, .btn:focus-visible, .back-btn:focus-visible
 .folder-status[data-state="ok"] { color: #15803d; }
 .folder-status[data-state="err"] { color: #b91c1c; }
 .folder-status[data-state="scanning"] { color: #b45309; }
+.print-hint { font-size: .82rem; color: var(--text-soft); }
 .print-field { display: flex; flex-direction: column; gap: 6px; font-size: .85rem; color: var(--text-soft); font-weight: 600; }
 .print-field small { font-weight: 500; opacity: .82; }
 #codesInput { width: 100%; min-height: 66px; resize: vertical; margin-top: 2px; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 1.05rem; font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: .5px; text-transform: uppercase; }
