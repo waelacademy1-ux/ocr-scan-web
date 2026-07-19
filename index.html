@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#4f46e5" />
   <meta name="description" content="WaelPrint — a focused code scanner. Line a code up in the box and read it instantly in your browser. Send codes live to a paired PC." />
-  <title>WaelPrint (V3.4) — Print by code</title>
+  <title>WaelPrint (V3.5) — Print by code</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📷</text></svg>" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -15,7 +15,7 @@
     <button id="backBtn" class="back-btn" hidden aria-label="Go back">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
     </button>
-    <span class="brand"><span class="brand-dot" aria-hidden="true">●</span> WaelPrint <span class="brand-tag">V3.4</span></span>
+    <span class="brand"><span class="brand-dot" aria-hidden="true">●</span> WaelPrint <span class="brand-tag">V3.5</span></span>
   </header>
 
   <!-- Screen-reader live region for OCR progress/results -->
@@ -107,7 +107,7 @@
       <div class="desktop-card">
         <span class="desktop-emoji" aria-hidden="true">📲</span>
         <h1 tabindex="-1">Open print files by code</h1>
-        <p class="sub">Connect your folder once — a parent like <code>D:\wael</code> is fine, it searches every subfolder. Then scan or type codes: <strong>HG1-CN7</strong> opens both files in two tabs. Unknown code → it tells you it's out of the database.</p>
+        <p class="sub">Connect your folder once — a parent like <code>D:\wael</code> is fine, it searches every subfolder. Then scan or type codes — any separator works (<strong>HG1-CN7</strong>, <strong>HG1, CN7</strong>, <strong>HG1.CN7</strong>). Both files open together in one new window. Unknown code → it tells you it's out of the database.</p>
 
         <div class="print-block">
           <div class="print-row">
@@ -116,7 +116,7 @@
             <span id="folderStatus" class="folder-status" data-state="idle">Not connected</span>
           </div>
           <label class="print-field">
-            <span>Codes to open <small>— separate with a dash, space or comma (e.g. HG1-CN7); phone scans land here too</small></span>
+            <span>Codes to open <small>— any separator works: HG1-CN7, HG1, CN7, HG1.CN7; phone scans land here too</small></span>
             <textarea id="codesInput" spellcheck="false" placeholder="e.g.  HG1-CN7"></textarea>
           </label>
           <div class="print-actions">
